@@ -70,6 +70,7 @@ ma_protocol_crc16_calc (
   for (i = start; i < data_len; temp++, i++)
     sum += *(temp + start) & 0xff;
   uint16_t sum_s = (sum & 0xffff);
+
   return sum_s;
 }
 
