@@ -42,7 +42,7 @@ gboolean fpi_print_add_from_image (FpPrint *print,
                                    FpImage *image,
                                    GError **error);
 
-FpiMatchResult fpi_print_bz3_match (FpPrint *temp,
+FpiMatchResult fpi_print_bz3_match (FpPrint *print_template,
                                     FpPrint *print,
                                     gint     bz3_threshold,
                                     GError **error);
