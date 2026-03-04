@@ -22,6 +22,9 @@
 
 #define FP_COMPONENT "focaltech_moc"
 
+#define FOCALTECH_QUIRK_SINGLE_SLOT 1
+#define FOCALTECH_MOC_STATIC_USER_ID "focaltech_moc_static_id"
+
 #include "drivers_api.h"
 
 G_DEFINE_TYPE (FpiDeviceFocaltechMoc, fpi_device_focaltech_moc, FP_TYPE_DEVICE)
@@ -39,6 +42,7 @@ static const FpIdEntry id_table[] = {
   { .vid = 0x2808,  .pid = 0x077A,  },
   { .vid = 0x2808,  .pid = 0x079A,  },
   { .vid = 0x2808,  .pid = 0x5158,  },
+  { .vid = 0x2808,  .pid = 0x6553,  .driver_data = FOCALTECH_QUIRK_SINGLE_SLOT, },
   { .vid = 0,  .pid = 0,  .driver_data = 0 },   /* terminating entry */
 };
 
@@ -1047,7 +1051,7 @@ focaltech_moc_get_enrolled_info_cb (FpiDeviceFocaltechMoc *self,
   fp_cmd = (FpCmd *) buffer_in;
   items = (struct EnrolledInfoItem *) (fp_cmd + 1);
 
-  if (fp_cmd->code != 0x04)
+  if (fp_cmd->code != 0x04 && fp_cmd->code != 0x09)
     {
       fpi_ssm_mark_failed (self->task_ssm,
                            fpi_device_error_new_msg (FP_DEVICE_ERROR_PROTO,
@@ -1055,8 +1059,19 @@ focaltech_moc_get_enrolled_info_cb (FpiDeviceFocaltechMoc *self,
     }
   else
     {
-      memcpy (&data->enrolled_info->items[0], items,
-              FOCALTECH_MOC_MAX_FINGERS * sizeof (struct EnrolledInfoItem));
+      if (fp_cmd->code == 0x04)
+        {
+          memcpy (&data->enrolled_info->items[0], items,
+                  FOCALTECH_MOC_MAX_FINGERS * sizeof (struct EnrolledInfoItem));
+
+        }
+      else if (fp_cmd->code == 0x09)
+        {
+          memset (data->enrolled_info->actived, 0, FOCALTECH_MOC_MAX_FINGERS);
+          memset (&data->enrolled_info->items[0], 0,
+                  FOCALTECH_MOC_MAX_FINGERS * sizeof (struct EnrolledInfoItem));
+        }
+
       fpi_ssm_next_state (self->task_ssm);
     }
 }
@@ -1111,7 +1126,7 @@ focaltech_moc_get_enrolled_list_cb (FpiDeviceFocaltechMoc *self,
   fp_cmd = (FpCmd *) buffer_in;
   uid_list = (struct UidList *) (fp_cmd + 1);
 
-  if (fp_cmd->code != 0x04)
+  if (fp_cmd->code != 0x04 && fp_cmd->code != 0x09)
     {
       fpi_ssm_mark_failed (self->task_ssm,
                            fpi_device_error_new_msg (FP_DEVICE_ERROR_PROTO,
@@ -1120,46 +1135,49 @@ focaltech_moc_get_enrolled_list_cb (FpiDeviceFocaltechMoc *self,
   else
     {
       FpActionData *data = fpi_ssm_get_data (self->task_ssm);
-      int i;
 
-      for (i = 0; i < FOCALTECH_MOC_MAX_FINGERS; i++)
+      if (fp_cmd->code == 0x04)
         {
-          if (uid_list->actived[i] != 0)
+          for (size_t i = 0; i < FOCALTECH_MOC_MAX_FINGERS; i++)
             {
-              struct UserId *user_id = &uid_list->uid[i];
-              FpPrint *print = fp_print_new (FP_DEVICE (self));
-              struct EnrolledInfoItem *item = NULL;
-              int index;
-
-              fp_info ("focaltechmoc add slot: %d", i);
-
-              fprint_set_uid (print, user_id->uid, sizeof (user_id->uid));
-
-              if (focaltech_moc_get_enrolled_info_item (self, user_id->uid, &item, &index) == 0)
+              if (uid_list->actived[i] != 0)
                 {
-                  g_autofree gchar *userid_safe = NULL;
-                  const gchar *username;
-                  userid_safe = g_strndup ((const char *) &item->user_id, FOCALTECH_MOC_USER_ID_LENGTH);
-                  fp_dbg ("%s", userid_safe);
-                  fpi_print_fill_from_user_id (print, userid_safe);
-                  memcpy (data->enrolled_info->user_id[index].uid, user_id->uid, 32);
-                  data->enrolled_info->user_des[index].finger = fp_print_get_finger (print);
-                  username = fp_print_get_username (print);
+                  struct UserId *user_id = &uid_list->uid[i];
+                  FpPrint *print = fp_print_new (FP_DEVICE (self));
+                  struct EnrolledInfoItem *item = NULL;
+                  int index;
 
-                  if (username != NULL)
-                    strncpy (data->enrolled_info->user_des[index].username, username, 64);
+                  fp_info ("focaltechmoc add slot: %d", i);
+
+                  fprint_set_uid (print, user_id->uid, sizeof (user_id->uid));
+
+                  if (focaltech_moc_get_enrolled_info_item (self, user_id->uid, &item, &index) == 0)
+                    {
+                      g_autofree gchar *userid_safe = NULL;
+                      const gchar *username;
+
+                      userid_safe = g_strndup ((const char *) &item->user_id, FOCALTECH_MOC_USER_ID_LENGTH);
+                      fp_dbg ("%s", userid_safe);
+                      fpi_print_fill_from_user_id (print, userid_safe);
+                      memcpy (data->enrolled_info->user_id[index].uid, user_id->uid, 32);
+                      data->enrolled_info->user_des[index].finger = fp_print_get_finger (print);
+                      username = fp_print_get_username (print);
+
+                      if (username != NULL)
+                        strncpy (data->enrolled_info->user_des[index].username, username, 64);
+                    }
+
+                  g_ptr_array_add (data->list_result, g_object_ref_sink (print));
                 }
-
-              g_ptr_array_add (data->list_result, g_object_ref_sink (print));
             }
-        }
 
-      for (i = 0; i < FOCALTECH_MOC_MAX_FINGERS; i++)
-        {
-          struct EnrolledInfoItem *item = &data->enrolled_info->items[i];
+          for (size_t i = 0; i < FOCALTECH_MOC_MAX_FINGERS; i++)
+            {
+              struct EnrolledInfoItem *item = &data->enrolled_info->items[i];
 
-          if (data->enrolled_info->actived[i] == 0)
-            memset (item, 0, sizeof (struct EnrolledInfoItem));
+              if (data->enrolled_info->actived[i] == 0)
+                memset (item, 0, sizeof (struct EnrolledInfoItem));
+            }
         }
 
       fpi_ssm_next_state (self->task_ssm);
@@ -1281,9 +1299,21 @@ focaltech_moc_start_enroll_cb (FpiDeviceFocaltechMoc *self,
         }
       else
         {
+          guint64 quirk = fpi_device_get_driver_data (FP_DEVICE (self));
+
           fpi_device_get_enroll_data (FP_DEVICE (self), &print);
           fprint_set_uid (print, user_id->uid, sizeof (user_id->uid));
-          userid_safe = fpi_print_generate_user_id (print);
+
+          if (quirk == FOCALTECH_QUIRK_SINGLE_SLOT)
+            {
+              fp_info ("Applying SINGLE_SLOT quirk: Forcing static User ID");
+              userid_safe = g_strdup (FOCALTECH_MOC_STATIC_USER_ID);
+            }
+          else
+            {
+              userid_safe = fpi_print_generate_user_id (print);
+            }
+
           userid_len = strlen (userid_safe);
           userid_len = MIN (FOCALTECH_MOC_USER_ID_LENGTH, userid_len);
           fp_info ("focaltechmoc user id: %s", userid_safe);
@@ -1354,7 +1384,7 @@ focaltech_moc_set_enrolled_info_cb (FpiDeviceFocaltechMoc *self,
 
   fp_cmd = (FpCmd *) buffer_in;
 
-  if (fp_cmd->code != 0x04)
+  if (fp_cmd->code != 0x04 && fp_cmd->code != 0x09)
     {
       fpi_ssm_mark_failed (self->task_ssm,
                            fpi_device_error_new_msg (FP_DEVICE_ERROR_PROTO,
@@ -1381,7 +1411,7 @@ focaltech_moc_commit_cb (FpiDeviceFocaltechMoc *self,
 
   fp_cmd = (FpCmd *) buffer_in;
 
-  if (fp_cmd->code != 0x04)
+  if (fp_cmd->code != 0x04 && fp_cmd->code != 0x09)
     {
       fpi_ssm_mark_failed (self->task_ssm,
                            fpi_device_error_new_msg (FP_DEVICE_ERROR_PROTO,
@@ -1576,7 +1606,7 @@ focaltech_moc_delete_cb (FpiDeviceFocaltechMoc *self,
 
   fp_cmd = (FpCmd *) buffer_in;
 
-  if (fp_cmd->code != 0x04)
+  if (fp_cmd->code != 0x04 && fp_cmd->code != 0x09)
     {
       fpi_ssm_mark_failed (self->task_ssm,
                            fpi_device_error_new_msg (FP_DEVICE_ERROR_PROTO,
@@ -1771,8 +1801,17 @@ static void
 focaltech_moc_delete_print (FpDevice *device)
 {
   FpiDeviceFocaltechMoc *self = FPI_DEVICE_FOCALTECH_MOC (device);
-  FpActionData *data = g_new0 (FpActionData, 1);
+  guint64 quirk = fpi_device_get_driver_data (device);
+  FpActionData *data = NULL;
 
+  if (quirk == FOCALTECH_QUIRK_SINGLE_SLOT)
+    {
+      fpi_device_delete_complete (FP_DEVICE (self),
+                                  fpi_device_error_new (FP_DEVICE_ERROR_NOT_SUPPORTED));
+      return;
+    }
+
+  data = g_new0 (FpActionData, 1);
   data->enrolled_info = g_new0 (struct EnrolledInfo, 1);
   data->list_result = g_ptr_array_new_with_free_func (g_object_unref);
 
@@ -1798,13 +1837,14 @@ focaltech_moc_clear_storage_cb (FpiDeviceFocaltechMoc *self,
 
   if (error)
     {
+      fp_warn ("Mass erase command completed with warning: %s", error->message);
       fpi_ssm_mark_failed (self->task_ssm, error);
       return;
     }
 
   fp_cmd = (FpCmd *) buffer_in;
 
-  if (fp_cmd->code != 0x04)
+  if (fp_cmd && fp_cmd->code != 0x04)
     {
       fpi_ssm_mark_failed (self->task_ssm,
                            fpi_device_error_new_msg (FP_DEVICE_ERROR_PROTO,
@@ -1820,6 +1860,7 @@ focaltech_moc_clear_storage_cb (FpiDeviceFocaltechMoc *self,
 static void
 focaltech_clear_storage_run_state (FpiSsm *ssm, FpDevice *device)
 {
+  guint64 quirk = fpi_device_get_driver_data (device);
   guint8 *cmd_buf = NULL;
   uint16_t cmd_len = 0;
   uint16_t resp_len = 0;
@@ -1827,13 +1868,13 @@ focaltech_clear_storage_run_state (FpiSsm *ssm, FpDevice *device)
   switch (fpi_ssm_get_cur_state (ssm))
     {
     case MOC_CLEAR_STORAGE_SEND:
-      cmd_len = 0;
-      resp_len = sizeof (uint8_t);
+      resp_len = quirk == FOCALTECH_QUIRK_SINGLE_SLOT ? 0 : sizeof (uint8_t);
       cmd_buf = focaltech_moc_compose_cmd (0xac, NULL, cmd_len);
+
       focaltech_moc_get_cmd (device, cmd_buf,
                              sizeof (FpCmd) + cmd_len + sizeof (uint8_t),
                              sizeof (FpCmd) + resp_len + sizeof (uint8_t),
-                             0,
+                             FALSE,
                              focaltech_moc_clear_storage_cb);
       break;
     }

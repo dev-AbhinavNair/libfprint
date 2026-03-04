@@ -60,6 +60,7 @@ drivers_tests = [
 	'realtek',
 	'realtek-5816',
     'focaltech_moc',
+    'focaltech_moc-6553',
     'mafpmoc',
     'secugen',
 ]
