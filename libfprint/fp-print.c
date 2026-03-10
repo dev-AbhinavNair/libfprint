@@ -605,18 +605,16 @@ fp_print_equal (FpPrint *self, FpPrint *other)
   if (g_strcmp0 (self->device_id, other->device_id))
     return FALSE;
 
-  if (self->type == FPI_PRINT_RAW)
+  switch (self->type)
     {
+    case FPI_PRINT_RAW:
       return g_variant_equal (self->data, other->data);
-    }
-  else if (self->type == FPI_PRINT_NBIS)
-    {
-      guint i;
 
+    case FPI_PRINT_NBIS:
       if (self->prints->len != other->prints->len)
         return FALSE;
 
-      for (i = 0; i < self->prints->len; i++)
+      for (guint i = 0; i < self->prints->len; i++)
         {
           struct xyt_struct *a = g_ptr_array_index (self->prints, i);
           struct xyt_struct *b = g_ptr_array_index (other->prints, i);
@@ -626,11 +624,12 @@ fp_print_equal (FpPrint *self, FpPrint *other)
         }
 
       return TRUE;
-    }
-  else
-    {
+
+    case FPI_PRINT_UNDEFINED:
       g_assert_not_reached ();
     }
+
+  g_return_val_if_reached (FALSE);
 }
 
 #define FPI_PRINT_VARIANT_TYPE G_VARIANT_TYPE ("(issbymsmsia{sv}v)")
@@ -821,72 +820,81 @@ fp_print_deserialize (const guchar *data,
   finger = finger_int8;
 
   /* Assume data is valid at this point if the values are somewhat sane. */
-  if (type == FPI_PRINT_NBIS)
+  switch (type)
     {
-      g_autoptr(GVariant) prints = g_variant_get_child_value (print_data, 0);
-      guint i;
+    case FPI_PRINT_NBIS:
+      {
+        g_autoptr(GVariant) prints = g_variant_get_child_value (print_data, 0);
+        guint i;
 
-      result = g_object_new (FP_TYPE_PRINT,
-                             "driver", driver,
-                             "device-id", device_id,
-                             "device-stored", device_stored,
-                             NULL);
-      g_object_ref_sink (result);
-      fpi_print_set_type (result, FPI_PRINT_NBIS);
-      for (i = 0; i < g_variant_n_children (prints); i++)
-        {
-          g_autofree struct xyt_struct *xyt = NULL;
-          const gint32 *xcol, *ycol, *thetacol;
-          gsize xlen, ylen, thetalen;
-          g_autoptr(GVariant) xyt_data = NULL;
-          GVariant *child;
+        result = g_object_new (FP_TYPE_PRINT,
+                               "driver", driver,
+                               "device-id", device_id,
+                               "device-stored", device_stored,
+                               NULL);
+        g_object_ref_sink (result);
+        fpi_print_set_type (result, FPI_PRINT_NBIS);
+        for (i = 0; i < g_variant_n_children (prints); i++)
+          {
+            g_autofree struct xyt_struct *xyt = NULL;
+            const gint32 *xcol, *ycol, *thetacol;
+            gsize xlen, ylen, thetalen;
+            g_autoptr(GVariant) xyt_data = NULL;
+            GVariant *child;
 
-          xyt_data = g_variant_get_child_value (prints, i);
+            xyt_data = g_variant_get_child_value (prints, i);
 
-          child = g_variant_get_child_value (xyt_data, 0);
-          xcol = g_variant_get_fixed_array (child, &xlen, sizeof (gint32));
-          g_variant_unref (child);
+            child = g_variant_get_child_value (xyt_data, 0);
+            xcol = g_variant_get_fixed_array (child, &xlen, sizeof (gint32));
+            g_variant_unref (child);
 
-          child = g_variant_get_child_value (xyt_data, 1);
-          ycol = g_variant_get_fixed_array (child, &ylen, sizeof (gint32));
-          g_variant_unref (child);
+            child = g_variant_get_child_value (xyt_data, 1);
+            ycol = g_variant_get_fixed_array (child, &ylen, sizeof (gint32));
+            g_variant_unref (child);
 
-          child = g_variant_get_child_value (xyt_data, 2);
-          thetacol = g_variant_get_fixed_array (child, &thetalen, sizeof (gint32));
-          g_variant_unref (child);
+            child = g_variant_get_child_value (xyt_data, 2);
+            thetacol = g_variant_get_fixed_array (child, &thetalen, sizeof (gint32));
+            g_variant_unref (child);
 
-          if (xlen != ylen || xlen != thetalen)
-            goto invalid_format;
+            if (xlen != ylen || xlen != thetalen)
+              goto invalid_format;
 
-          if (xlen > G_N_ELEMENTS (xyt->xcol))
-            goto invalid_format;
+            if (xlen > G_N_ELEMENTS (xyt->xcol))
+              goto invalid_format;
 
-          xyt = g_new0 (struct xyt_struct, 1);
-          xyt->nrows = xlen;
-          memcpy (xyt->xcol, xcol, sizeof (xcol[0]) * xlen);
-          memcpy (xyt->ycol, ycol, sizeof (xcol[0]) * xlen);
-          memcpy (xyt->thetacol, thetacol, sizeof (xcol[0]) * xlen);
+            xyt = g_new0 (struct xyt_struct, 1);
+            xyt->nrows = xlen;
+            memcpy (xyt->xcol, xcol, sizeof (xcol[0]) * xlen);
+            memcpy (xyt->ycol, ycol, sizeof (xcol[0]) * xlen);
+            memcpy (xyt->thetacol, thetacol, sizeof (xcol[0]) * xlen);
 
-          g_ptr_array_add (result->prints, g_steal_pointer (&xyt));
-        }
-    }
-  else if (type == FPI_PRINT_RAW)
-    {
-      g_autoptr(GVariant) fp_data = g_variant_get_child_value (print_data, 0);
+            g_ptr_array_add (result->prints, g_steal_pointer (&xyt));
+          }
+      }
+      break;
 
-      result = g_object_new (FP_TYPE_PRINT,
-                             "fpi-type", type,
-                             "driver", driver,
-                             "device-id", device_id,
-                             "device-stored", device_stored,
-                             "fpi-data", fp_data,
-                             NULL);
-      g_object_ref_sink (result);
-    }
-  else
-    {
-      g_warning ("Invalid print type: 0x%X", type);
-      goto invalid_format;
+    case FPI_PRINT_RAW:
+      {
+        g_autoptr(GVariant) fp_data = g_variant_get_child_value (print_data, 0);
+
+        result = g_object_new (FP_TYPE_PRINT,
+                               "fpi-type", type,
+                               "driver", driver,
+                               "device-id", device_id,
+                               "device-stored", device_stored,
+                               "fpi-data", fp_data,
+                               NULL);
+        g_object_ref_sink (result);
+      }
+      break;
+
+    case FPI_PRINT_UNDEFINED:
+      {
+        g_autofree char *type_str = g_enum_to_string (fpi_print_type_get_type (), type);
+        g_warning ("Invalid print type: 0x%X (%s)", type, type_str);
+
+        goto invalid_format;
+      }
     }
 
   date = g_date_new_julian (julian_date);
