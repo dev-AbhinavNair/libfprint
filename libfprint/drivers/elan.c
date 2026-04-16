@@ -547,6 +547,13 @@ capture_run_state (FpiSsm *ssm, FpDevice *dev)
           fpi_image_device_report_finger_status (idev, TRUE);
           elan_run_cmd (ssm, dev, &get_image_cmd, ELAN_CMD_TIMEOUT);
         }
+      else if (self->dev_type == ELAN_0C58 && self->last_read &&
+               (self->last_read[0] == 0x00 || self->last_read[0] == 0xaf))
+        {
+          /* 0x00 - not ready
+           * 0xaf - finger removed or sensor busy (seen on 0x0c58) */
+          fpi_ssm_jump_to_state_delayed (ssm, CAPTURE_WAIT_FINGER, 10);
+        }
       else
         {
           /* XXX: The timeout is emulated incorrectly, resulting in a zero byte read. */
@@ -795,7 +802,7 @@ elan_calibrate (FpiDeviceElan *self)
 
   g_return_if_fail (!self->active);
   self->active = TRUE;
-  self->calib_atts_left = ELAN_CALIBRATION_ATTEMPTS;
+  self->calib_atts_left = ELAN_CALIBRATION_ATTEMPTS (self->dev_type);
 
   FpiSsm *ssm = fpi_ssm_new (FP_DEVICE (self), calibrate_run_state,
                              CALIBRATE_NUM_STATES);
