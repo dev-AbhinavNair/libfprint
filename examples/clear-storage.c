@@ -121,7 +121,7 @@ start_clear_storage (FpDevice *dev, ClearStorageData *clear_storage_data)
 {
   char buffer[20];
 
-  g_print ("Clear device storage? [Y/n]? ");
+  g_print ("Clear device storage? [y/N]? ");
   if (fgets (buffer, sizeof (buffer), stdin) &&
       (buffer[0] == 'Y' || buffer[0] == 'y'))
     {
