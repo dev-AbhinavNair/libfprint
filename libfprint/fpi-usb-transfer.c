@@ -548,3 +548,23 @@ fpi_usb_transfer_submit_sync (FpiUsbTransfer *transfer,
 
   return res;
 }
+
+/**
+ * fpi_usb_transfer_set_short_error:
+ * @transfer: The transfer to submit, must have been filled.
+ * @short_is_error: Whether a short transfer should be considered an error
+ *
+ * Sets whether a short transfer (a transfer in which the transferred length
+ * does not match the expected length) should be considered an error
+ *
+ * By default, short transfers are not considered an error, but
+ * drivers can enforce a further check by setting this flag.
+ */
+void
+fpi_usb_transfer_set_short_error (FpiUsbTransfer *transfer,
+                                  gboolean        short_is_error)
+{
+  g_return_if_fail (transfer);
+
+  transfer->short_is_error = short_is_error;
+}
