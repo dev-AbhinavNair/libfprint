@@ -220,6 +220,36 @@ fpi_byte_writer_reset_and_get_data (FpiByteWriter * writer)
 }
 
 /**
+ * fpi_byte_writer_reset_and_get_bytes:
+ * @writer: #FpiByteWriter instance
+ *
+ * Resets @writer and returns the current data as a #GBytes.
+ *
+ * Returns: (transfer full): the current data as a #GBytes.
+ */
+GBytes *
+fpi_byte_writer_reset_and_get_bytes (FpiByteWriter * writer)
+{
+  GBytes *bytes;
+
+  g_return_val_if_fail (writer != NULL, NULL);
+
+  if (!writer->owned)
+    {
+      bytes = g_bytes_new (g_steal_pointer (&writer->parent.data),
+                           writer->parent.size);
+    }
+  else
+    {
+      bytes = g_bytes_new_take ((gpointer) g_steal_pointer (&writer->parent.data),
+                                writer->parent.size);
+    }
+
+  fpi_byte_writer_reset (writer);
+  return g_steal_pointer (&bytes);
+}
+
+/**
  * fpi_byte_writer_free:
  * @writer: (in) (transfer full): #FpiByteWriter instance
  *
@@ -599,6 +629,15 @@ CREATE_WRITE_STRING_FUNC (32, guint32);
  * @size: Size of @data in bytes
  *
  * Writes @size bytes of @data to @writer.
+ *
+ * Returns: %TRUE if the value could be written
+ */
+/**
+ * fpi_byte_writer_put_bytes:
+ * @writer: #FpiByteWriter instance
+ * @bytes: (transfer none): Data to write
+ *
+ * Writes the contents of @bytes to @writer.
  *
  * Returns: %TRUE if the value could be written
  */

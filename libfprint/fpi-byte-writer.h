@@ -77,6 +77,9 @@ void            fpi_byte_writer_reset                   (FpiByteWriter *writer);
 
 guint8 *        fpi_byte_writer_reset_and_get_data      (FpiByteWriter *writer);
 
+
+GBytes *        fpi_byte_writer_reset_and_get_bytes     (FpiByteWriter *writer);
+
 /**
  * fpi_byte_writer_get_pos:
  * @writer: #FpiByteWriter instance
@@ -202,6 +205,9 @@ gboolean        fpi_byte_writer_put_float64_le    (FpiByteWriter *writer, gdoubl
 
 
 gboolean        fpi_byte_writer_put_data          (FpiByteWriter *writer, const guint8 *data, guint size);
+
+
+gboolean        fpi_byte_writer_put_bytes         (FpiByteWriter *writer, const GBytes *bytes);
 
 
 gboolean        fpi_byte_writer_fill              (FpiByteWriter *writer, guint8 value, guint size);
@@ -338,6 +344,18 @@ fpi_byte_writer_put_data_inline (FpiByteWriter * writer, const guint8 * data,
   return TRUE;
 }
 
+static inline gboolean
+fpi_byte_writer_put_bytes_inline (FpiByteWriter * writer, const GBytes * bytes)
+{
+  g_return_val_if_fail (writer != NULL, FALSE);
+  g_return_val_if_fail (bytes != NULL, FALSE);
+  const guint8 *data;
+  gsize size;
+
+  data = g_bytes_get_data ((GBytes *) bytes, &size);
+  return fpi_byte_writer_put_data_inline (writer, data, size);
+}
+
 static inline void
 fpi_byte_writer_fill_unchecked (FpiByteWriter * writer, guint8 value, guint size)
 {
@@ -413,6 +431,10 @@ fpi_byte_writer_fill_inline (FpiByteWriter * writer, guint8 value, guint size)
 
 #define fpi_byte_writer_put_data(writer, data, size) \
     G_LIKELY (fpi_byte_writer_put_data_inline (writer, data, size))
+#define fpi_byte_writer_put_data_static(writer, data) \
+    G_LIKELY (fpi_byte_writer_put_data_inline (writer, data, sizeof (data)))
+#define fpi_byte_writer_put_bytes(writer, bytes) \
+    G_LIKELY (fpi_byte_writer_put_bytes_inline (writer, bytes))
 #define fpi_byte_writer_fill(writer, val, size) \
     G_LIKELY (fpi_byte_writer_fill_inline (writer, val, size))
 
