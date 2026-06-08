@@ -344,7 +344,8 @@ transfer_finish_cb (GObject *source_object, GAsyncResult *res, gpointer user_dat
     {
       error = g_error_new (G_USB_DEVICE_ERROR,
                            G_USB_DEVICE_ERROR_IO,
-                           "Unexpected short error of %zd size (expected %zd)", transfer->actual_length, transfer->length);
+                           "Unexpected short error of %zd size (expected %zd)",
+                           transfer->actual_length, transfer->length);
     }
 
   callback = transfer->callback;
