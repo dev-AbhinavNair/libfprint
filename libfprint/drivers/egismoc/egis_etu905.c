@@ -97,7 +97,7 @@ egis_etu905_wait_finger_on_sensor (FpiSsm   *ssm,
                                    EGIS_ETU905_USB_INTERRUPT_IN_RECV_LENGTH);
   transfer->ssm = ssm;
   /* Interrupt on this device always returns 1 byte short; this is expected */
-  transfer->short_is_error = FALSE;
+  fpi_usb_transfer_set_short_error (transfer, FALSE);
 
   fpi_device_report_finger_status (device, FP_FINGER_STATUS_NEEDED);
 
@@ -382,7 +382,7 @@ egis_etu905_exec_cmd (FpDevice         *device,
     }
 
   transfer = fpi_usb_transfer_new (device);
-  transfer->short_is_error = TRUE;
+  fpi_usb_transfer_set_short_error (transfer, TRUE);
   transfer->ssm = self->cmd_ssm;
 
   fpi_usb_transfer_fill_bulk_full (transfer,
