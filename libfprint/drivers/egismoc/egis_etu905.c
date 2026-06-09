@@ -943,7 +943,6 @@ egis_etu905_get_check_cmd (FpDevice *device,
   fp_dbg ("Get check command");
   FpiDeviceEgisEtu905 *self = FPI_DEVICE_EGIS_ETU905 (device);
   g_auto(FpiByteWriter) writer = {0};
-  g_autofree guchar *result = NULL;
   gboolean written = TRUE;
 
   /*
