@@ -207,7 +207,8 @@ egis_etu905_cmd_receive_cb (FpiUsbTransfer *transfer,
       fpi_ssm_mark_failed (transfer->ssm, error);
       return;
     }
-  if (data == NULL || transfer->actual_length < egis_etu905_read_prefix_len)
+
+  if (transfer->actual_length < egis_etu905_read_prefix_len)
     {
       fpi_ssm_mark_failed (transfer->ssm,
                            fpi_device_error_new (FP_DEVICE_ERROR_GENERAL));
@@ -216,6 +217,7 @@ egis_etu905_cmd_receive_cb (FpiUsbTransfer *transfer,
 
   /* Store the response data and let the cmd_ssm_done callback invoke
    * the actual callback with the stored data */
+  g_assert (data != NULL);
   data->buffer_in = g_steal_pointer (&transfer->buffer);
   data->length_in = transfer->actual_length;
 
@@ -282,7 +284,7 @@ egis_etu905_cmd_ssm_done (FpiSsm   *ssm,
   if (data && data->callback)
     {
       data->callback (device,
-                      g_steal_pointer (&data->buffer_in),
+                      data->buffer_in,
                       data->length_in,
                       g_steal_pointer (&local_error));
     }
