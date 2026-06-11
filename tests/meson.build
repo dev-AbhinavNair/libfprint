@@ -32,38 +32,38 @@ installed_tests_execdir = libexecdir / 'installed-tests' / versioned_libname
 installed_tests_testdir = datadir / 'installed-tests' / versioned_libname
 installed_tests_libdir = libdir
 
-drivers_tests = [
-    'aes2501',
-    'aes3500',
-    'elan',
-    'elan-cobo',
-    'elanmoc',
-    'elanspi',
-    'synaptics',
-    'upektc_img',
-    'upektc_img-tcs1s',
-    'uru4000-msv2',
-    'uru4000-4500',
-    'vfs0050',
-    'vfs301',
-    'vfs5011',
-    'vfs7552',
-    'goodixmoc',
-    'nb1010',
-    'egis0570',
-    'egismoc',
-    'egis_etu905',
-    'egismoc-05a1',
-    'egismoc-0586',
-    'egismoc-0587',
-    'fpcmoc',
-	'realtek',
-	'realtek-5816',
-    'focaltech_moc',
-    'focaltech_moc-6553',
-    'mafpmoc',
-    'secugen',
-]
+drivers_tests = {
+    'aes2501': {},
+    'aes3500': {},
+    'elan': {},
+    'elan-cobo': {},
+    'elanmoc': {},
+    'elanspi': {},
+    'synaptics': {},
+    'upektc_img': {},
+    'upektc_img-tcs1s': {},
+    'uru4000-msv2': {},
+    'uru4000-4500': {},
+    'vfs0050': {},
+    'vfs301': {},
+    'vfs5011': {},
+    'vfs7552': {},
+    'goodixmoc': {},
+    'nb1010': {},
+    'egis0570': {},
+    'egismoc': {},
+    'egis_etu905': {},
+    'egismoc-05a1': {},
+    'egismoc-0586': {},
+    'egismoc-0587': {},
+    'fpcmoc': {},
+	'realtek': {},
+	'realtek-5816': {},
+    'focaltech_moc': {},
+    'focaltech_moc-6553': {},
+    'mafpmoc': {},
+    'secugen': {},
+}
 
 if get_option('introspection')
   conf = configuration_data()
@@ -170,7 +170,7 @@ if get_option('introspection')
     endforeach
 
     driver_tests_enabled = false
-    foreach driver_test: drivers_tests
+    foreach driver_test, args: drivers_tests
         driver_name = driver_test.split('-')[0]
         driver_envs = envs
         driver_envs.set('FP_DRIVERS_ALLOWLIST', driver_name)
@@ -186,7 +186,7 @@ if get_option('introspection')
                 ],
                 env: driver_envs,
                 suite: ['drivers'],
-                timeout: 15,
+                timeout: args.get('timeout', 15),
                 depends: libfprint_typelib,
             )
 
