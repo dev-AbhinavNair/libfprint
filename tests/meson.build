@@ -59,7 +59,7 @@ drivers_tests = {
     'fpcmoc': {},
 	'realtek': {},
 	'realtek-5816': {},
-    'focaltech_moc': {},
+    'focaltech_moc': { 'timeout': 30 },
     'focaltech_moc-6553': {},
     'mafpmoc': {},
     'secugen': {},
