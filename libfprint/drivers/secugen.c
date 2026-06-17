@@ -526,6 +526,13 @@ init_i2c_readback_cb (FpiUsbTransfer *transfer,
       return;
     }
 
+  if (transfer->actual_length < 1)
+    {
+      fpi_ssm_mark_failed (transfer->ssm,
+                           fpi_device_error_new (FP_DEVICE_ERROR_PROTO));
+      return;
+    }
+
   self->last_reg_rd = transfer->buffer[0];
   self->init_reg_idx++;
 
@@ -555,6 +562,13 @@ init_late_readback_cb (FpiUsbTransfer *transfer,
       return;
     }
 
+  if (transfer->actual_length < 1)
+    {
+      fpi_ssm_mark_failed (transfer->ssm,
+                           fpi_device_error_new (FP_DEVICE_ERROR_PROTO));
+      return;
+    }
+
   self->last_reg_rd = transfer->buffer[0];
   self->init_reg_idx++;
 
@@ -581,6 +595,13 @@ init_window_readback_cb (FpiUsbTransfer *transfer,
   if (error)
     {
       fpi_ssm_mark_failed (transfer->ssm, error);
+      return;
+    }
+
+  if (transfer->actual_length < 1)
+    {
+      fpi_ssm_mark_failed (transfer->ssm,
+                           fpi_device_error_new (FP_DEVICE_ERROR_PROTO));
       return;
     }
 
@@ -737,6 +758,13 @@ init_frame_readback_cb (FpiUsbTransfer *transfer,
   if (error)
     {
       fpi_ssm_mark_failed (transfer->ssm, error);
+      return;
+    }
+
+  if (transfer->actual_length < 1)
+    {
+      fpi_ssm_mark_failed (transfer->ssm,
+                           fpi_device_error_new (FP_DEVICE_ERROR_PROTO));
       return;
     }
 
