@@ -30,7 +30,7 @@
   "  <url type=\"homepage\">https://fprint.freedesktop.org</url>\n" \
   "  <url type=\"vcs-browser\">https://gitlab.freedesktop.org/libfprint/libfprint</url>\n" \
   "  <url type=\"help\">https://fprint.freedesktop.org/libfprint-dev</url>\n" \
-  "  <url type=\"bugtracker\">https://gitlab.freedesktop.org/libfprint/libfprint/-/issues</url>\n" \
+  "  <url type=\"bugtracker\">https://gitlab.freedesktop.org/libfprint/libfprint/-/work_items</url>\n" \
   "  <summary>Async fingerprint readers library</summary>\n" \
   "  <description>\n" \
   "    <p>\n" \
