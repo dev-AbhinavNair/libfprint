@@ -120,7 +120,7 @@ struct _FpiDeviceSecugen
   guint8 iface_num;                /* Claimed USB interface number */
 
   /* Finger detection */
-  guint finger_poll_source;         /* GLib timeout source ID */
+  GSource *finger_poll_source;      /* Detection/finger-off timeout source */
 
   /* Calibration / flat-field correction */
   guint8  *cal_raw;                /* Background frame at raw sensor res (956x688) */
@@ -1679,7 +1679,8 @@ enum detect_states {
 };
 
 static void detect_start (FpImageDevice *dev);
-static gboolean detect_retry_cb (gpointer user_data);
+static void detect_retry_timeout (FpDevice          *dev,
+                                  gpointer user_data G_GNUC_UNUSED);
 
 static void
 detect_run_state (FpiSsm *ssm, FpDevice *_dev)
@@ -1774,8 +1775,11 @@ detect_run_state (FpiSsm *ssm, FpDevice *_dev)
 
             /* Schedule another poll */
             self->finger_poll_source =
-              g_timeout_add (SECUGEN_FINGER_POLL_MS,
-                             (GSourceFunc) detect_retry_cb, dev);
+              fpi_device_add_timeout (FP_DEVICE (dev),
+                                      SECUGEN_FINGER_POLL_MS,
+                                      detect_retry_timeout,
+                                      NULL,
+                                      NULL);
           }
 
         fpi_ssm_mark_completed (ssm);
@@ -1784,16 +1788,14 @@ detect_run_state (FpiSsm *ssm, FpDevice *_dev)
     }
 }
 
-static gboolean
-detect_retry_cb (gpointer user_data)
+static void
+detect_retry_timeout (FpDevice *dev, gpointer user_data G_GNUC_UNUSED)
 {
-  FpImageDevice *dev = FP_IMAGE_DEVICE (user_data);
-  FpiDeviceSecugen *self = FPI_DEVICE_SECUGEN (dev);
+  FpImageDevice *img_dev = FP_IMAGE_DEVICE (dev);
+  FpiDeviceSecugen *self = FPI_DEVICE_SECUGEN (img_dev);
 
-  self->finger_poll_source = 0;
-  detect_start (dev);
-
-  return G_SOURCE_REMOVE;
+  self->finger_poll_source = NULL;
+  detect_start (img_dev);
 }
 
 static void
@@ -1829,16 +1831,14 @@ detect_start (FpImageDevice *dev)
   fpi_ssm_start (ssm, detect_ssm_complete);
 }
 
-static gboolean
-finger_off_cb (gpointer user_data)
+static void
+finger_off_timeout (FpDevice *dev, gpointer user_data G_GNUC_UNUSED)
 {
-  FpImageDevice *dev = FP_IMAGE_DEVICE (user_data);
-  FpiDeviceSecugen *self = FPI_DEVICE_SECUGEN (dev);
+  FpImageDevice *img_dev = FP_IMAGE_DEVICE (dev);
+  FpiDeviceSecugen *self = FPI_DEVICE_SECUGEN (img_dev);
 
-  self->finger_poll_source = 0;
-  fpi_image_device_report_finger_status (dev, FALSE);
-
-  return G_SOURCE_REMOVE;
+  self->finger_poll_source = NULL;
+  fpi_image_device_report_finger_status (img_dev, FALSE);
 }
 
 /* ================================================================
@@ -1917,6 +1917,8 @@ dev_deinit (FpImageDevice *dev)
 {
   FpiDeviceSecugen *self = FPI_DEVICE_SECUGEN (dev);
   GError *error = NULL;
+
+  g_clear_pointer (&self->finger_poll_source, g_source_destroy);
 
   g_clear_pointer (&self->cal_raw, g_free);
   g_clear_pointer (&self->bulk_buffer, g_free);
@@ -2001,11 +2003,7 @@ dev_deactivate (FpImageDevice *dev)
   FpiDeviceSecugen *self = FPI_DEVICE_SECUGEN (dev);
 
   /* Cancel any pending timeout */
-  if (self->finger_poll_source)
-    {
-      g_source_remove (self->finger_poll_source);
-      self->finger_poll_source = 0;
-    }
+  g_clear_pointer (&self->finger_poll_source, g_source_destroy);
 
   /* If an init/detect/capture SSM is still in flight, defer completion until
    * it unwinds - its completion handler calls secugen_finish_deactivate(). This
@@ -2070,11 +2068,7 @@ dev_change_state (FpImageDevice      *dev,
         fp_dbg ("Starting image capture");
 
         /* Cancel timeout if still running */
-        if (self->finger_poll_source)
-          {
-            g_source_remove (self->finger_poll_source);
-            self->finger_poll_source = 0;
-          }
+        g_clear_pointer (&self->finger_poll_source, g_source_destroy);
 
         self->ssm_count++;
         ssm = fpi_ssm_new (FP_DEVICE (dev), capture_run_state,
@@ -2085,7 +2079,11 @@ dev_change_state (FpImageDevice      *dev,
 
     case FPI_IMAGE_DEVICE_STATE_AWAIT_FINGER_OFF:
       fp_dbg ("Waiting for finger off");
-      self->finger_poll_source = g_timeout_add (500, finger_off_cb, dev);
+      self->finger_poll_source = fpi_device_add_timeout (FP_DEVICE (dev),
+                                                         500,
+                                                         finger_off_timeout,
+                                                         NULL,
+                                                         NULL);
       break;
 
     case FPI_IMAGE_DEVICE_STATE_IDLE:
@@ -2110,7 +2108,7 @@ fpi_device_secugen_init (FpiDeviceSecugen *self)
 {
   self->init_reg_idx = 0;
   self->fw_read_idx = 0;
-  self->finger_poll_source = 0;
+  self->finger_poll_source = NULL;
   self->exposure = SECUGEN_EXPOSURE_NORMAL;
   self->deactivating = FALSE;
   self->ssm_count = 0;
@@ -2120,6 +2118,8 @@ static void
 fpi_device_secugen_finalize (GObject *object)
 {
   FpiDeviceSecugen *self = FPI_DEVICE_SECUGEN (object);
+
+  g_clear_pointer (&self->finger_poll_source, g_source_destroy);
 
   /* Safety net: free heap buffers even if img_close never ran (e.g. an
    * activation failure tore the device down before dev_deinit). */
