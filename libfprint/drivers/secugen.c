@@ -636,6 +636,12 @@ init_fw_read_cb (FpiUsbTransfer *transfer,
   else
     {
       /* All FW data received - extract image processing parameters */
+      if (!self->fw_data)
+        {
+          fp_warn ("FW data buffer missing; skipping calibration extraction");
+          fpi_ssm_next_state (transfer->ssm);
+          return;
+        }
 
       /* BLC region offsets: 16 × int16 at fw_data[0x0e] */
       if (self->fw_data_len >= SECUGEN_BLC_OFFSETS_FW + 32)
