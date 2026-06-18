@@ -1094,7 +1094,7 @@ mafp_pwr_btn_shield_on_cb (FpiUsbTransfer *transfer,
 static void
 mafp_pwr_btn_shield_on (FpiDeviceMafpmoc *self, int on)
 {
-  g_autoptr(GError) pre_error = fpi_ssm_get_error (self->task_ssm);
+  GError *pre_error = fpi_ssm_get_error (self->task_ssm);
 
   if (g_error_matches (pre_error, G_USB_DEVICE_ERROR, G_USB_DEVICE_ERROR_FAILED))
     {
@@ -2442,31 +2442,29 @@ mafp_cancel (FpDevice *device)
   fp_dbg ("mafp_cancel");
 }
 
-static void
+static gboolean
 mafp_release_interface (FpiDeviceMafpmoc *self,
-                        GError           *error)
+                        GError          **error)
 {
-  g_autoptr(GError) release_error = NULL;
-  g_free (self->serial_number);
-  g_free (self->enroll_user_id);
-
   /* Release usb interface */
-  g_usb_device_release_interface (fpi_device_get_usb_device (FP_DEVICE (self)),
-                                  0, 0, &release_error);
-  /* Retain passed error if set, otherwise propagate error from release. */
-  if (error == NULL)
-    error = g_steal_pointer (&release_error);
-  /* Notify close complete */
-  fpi_device_close_complete (FP_DEVICE (self), error);
+  return g_usb_device_release_interface (fpi_device_get_usb_device (FP_DEVICE (self)),
+                                         0, 0, error);
 }
 
 static void
 mafp_exit (FpDevice *device)
 {
+  g_autoptr(GError) error = NULL;
+
   fp_dbg ("mafp_exit");
   FpiDeviceMafpmoc *self = FPI_DEVICE_MAFPMOC (device);
 
-  mafp_release_interface (self, NULL);
+  mafp_release_interface (self, &error);
+  fpi_device_close_complete (FP_DEVICE (self), error);
+
+  g_clear_pointer (&self->serial_number, g_free);
+  g_clear_pointer (&self->enroll_user_id, g_free);
+  g_clear_pointer (&self->templates, g_free);
 }
 
 static void
