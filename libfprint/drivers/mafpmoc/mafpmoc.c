@@ -194,7 +194,7 @@ ma_protocol_parse_body (  int16_t              cmd,
       break;
 
     default:
-      memcpy (presp, buffer, buffer_len);
+      memcpy (presp, buffer, MIN ((gsize) buffer_len, sizeof (*presp)));
       break;
     }
   return 0;
@@ -291,7 +291,22 @@ fp_cmd_receive_cb (FpiUsbTransfer *transfer,
           mafp_mark_failed (device, transfer->ssm, FP_DEVICE_ERROR_PROTO, "Corrupted resp length received");
           return;
         }
+      if (data->cmd_request_len + PACKAGE_HEADER_SIZE > sizeof (data->recv_buffer))
+        {
+          mafp_mark_failed (device, transfer->ssm, FP_DEVICE_ERROR_PROTO, "Resp length too large");
+          return;
+        }
       data_index = PACKAGE_HEADER_SIZE;
+    }
+  if (transfer->actual_length < data_index)
+    {
+      mafp_mark_failed (device, transfer->ssm, FP_DEVICE_ERROR_PROTO, "Corrupted resp payload received");
+      return;
+    }
+  if (data->cmd_actual_len + transfer->actual_length > sizeof (data->recv_buffer))
+    {
+      mafp_mark_failed (device, transfer->ssm, FP_DEVICE_ERROR_PROTO, "Resp data overflow");
+      return;
     }
   memcpy (data->recv_buffer + data->cmd_actual_len, transfer->buffer, transfer->actual_length);
   data->cmd_actual_len += transfer->actual_length - data_index;
@@ -467,23 +482,28 @@ mafp_template_from_print (FpPrint *print)
   g_autoptr(GVariant) data = NULL;
   g_autoptr(GVariant) tpl_uid = NULL;
   g_autoptr(GVariant) dev_sn = NULL;
-  const uint16_t tpl_id = 0;
+  uint16_t tpl_id = 0;
   const char *user_id;
   const char *serial_num;
   gsize user_id_len = 0;
   gsize serial_num_len = 0;
-  mafp_template_t template;
+  mafp_template_t template = { 0, };
 
   g_object_get (print, "fpi-data", &data, NULL);
+  if (!data)
+    return template;
+
   g_variant_get (data, "(q@ay@ay)", &tpl_id, &tpl_uid, &dev_sn);
   user_id = g_variant_get_fixed_array (tpl_uid, &user_id_len, 1);
   serial_num = g_variant_get_fixed_array (dev_sn, &serial_num_len, 1);
 
   template.id = tpl_id;
   memset (template.uid, 0, TEMPLATE_UID_SIZE);
-  memcpy (template.uid, user_id, user_id_len);
+  if (user_id && user_id_len > 0)
+    memcpy (template.uid, user_id, MIN (user_id_len, sizeof (template.uid) - 1));
   memset (template.sn, 0, DEVICE_SN_SIZE);
-  memcpy (template.sn, serial_num, serial_num_len);
+  if (serial_num && serial_num_len > 0)
+    memcpy (template.sn, serial_num, MIN (serial_num_len, sizeof (template.sn) - 1));
 
   return template;
 }
@@ -495,27 +515,26 @@ mafp_print_from_template (FpiDeviceMafpmoc *self, mafp_template_t *template)
   GVariant *data;
   GVariant *uid;
   GVariant *dev_sn;
-  unsigned user_id_len;
-  unsigned serial_num_len;
+  g_autofree char *uid_str = g_strndup (template->uid, TEMPLATE_UID_SIZE);
+  const char *serial = self->serial_number ? self->serial_number : "";
+  unsigned user_id_len = strlen (uid_str);
+  unsigned serial_num_len = strnlen (serial, DEVICE_SN_SIZE);
 
   print = fp_print_new (FP_DEVICE (self));
 
-  user_id_len = strlen (template->uid);
-  user_id_len = MIN (TEMPLATE_UID_SIZE, user_id_len);
-  uid = g_variant_new_fixed_array (G_VARIANT_TYPE_BYTE, template->uid, user_id_len, 1);
+  uid = g_variant_new_fixed_array (G_VARIANT_TYPE_BYTE, uid_str, user_id_len, 1);
 
-  serial_num_len = strlen (self->serial_number);
-  dev_sn = g_variant_new_fixed_array (G_VARIANT_TYPE_BYTE, self->serial_number, serial_num_len, 1);
-  fp_dbg ("print: %d/%s/%s", template->id, template->uid, self->serial_number);
+  dev_sn = g_variant_new_fixed_array (G_VARIANT_TYPE_BYTE, serial, serial_num_len, 1);
+  fp_dbg ("print: %d/%s/%s", template->id, uid_str, serial);
 
   data = g_variant_new ("(q@ay@ay)", template->id, uid, dev_sn);
 
   fpi_print_set_type (print, FPI_PRINT_RAW);
   fpi_print_set_device_stored (print, true);
-  g_object_set (print, "description", template->uid, NULL);
+  g_object_set (print, "description", uid_str, NULL);
   g_object_set (print, "fpi-data", data, NULL);
 
-  fpi_print_fill_from_user_id (print, template->uid);
+  fpi_print_fill_from_user_id (print, uid_str);
 
   return print;
 }
@@ -525,15 +544,19 @@ mafp_load_enrolled_ids (FpiDeviceMafpmoc *self, mafp_cmd_response_t *resp)
 {
   uint16_t num = 0;
   char msg[1024] = {0};
-  char id_str[16] = {0};
+  size_t used = 0;
 
   for (uint16_t i = 0; i < sizeof (resp->tpl_table.list); i++)
     {
       if (resp->tpl_table.list[i])
         {
           self->templates->total_list[num++].id = i;
-          sprintf (id_str, "%d ", i);
-          strcat (msg, id_str);
+          if (used < sizeof (msg))
+            {
+              int written = g_snprintf (msg + used, sizeof (msg) - used, "%u ", i);
+              if (written > 0)
+                used += MIN ((size_t) written, sizeof (msg) - used);
+            }
         }
     }
   self->templates->index = 0;
@@ -990,8 +1013,8 @@ fp_enroll_save_tpl_cb (FpiDeviceMafpmoc    *self,
   GVariant *dev_sn;
   unsigned user_id_len;
   unsigned serial_num_len;
-  char *user_id = NULL;
-  char *serial_num = NULL;
+  const char *user_id = NULL;
+  const char *serial_num = NULL;
 
   if (error)
     {
@@ -1005,13 +1028,13 @@ fp_enroll_save_tpl_cb (FpiDeviceMafpmoc    *self,
     {
       fpi_device_get_enroll_data (dev, &print);
 
-      user_id = self->enroll_user_id;
-      user_id_len = strlen (user_id);
+      user_id = self->enroll_user_id ? self->enroll_user_id : "";
+      user_id_len = strnlen (user_id, TEMPLATE_UID_SIZE);
       fp_dbg ("user_id(%d): %s", user_id_len, user_id);
       uid = g_variant_new_fixed_array (G_VARIANT_TYPE_BYTE, user_id, user_id_len, 1);
 
-      serial_num = self->serial_number;
-      serial_num_len = strlen (serial_num);
+      serial_num = self->serial_number ? self->serial_number : "";
+      serial_num_len = strnlen (serial_num, DEVICE_SN_SIZE);
       fp_dbg ("dev_sn(%d): %s", serial_num_len, serial_num);
       dev_sn = g_variant_new_fixed_array (G_VARIANT_TYPE_BYTE, serial_num, serial_num_len, 1);
 
@@ -1336,7 +1359,9 @@ fp_enroll_sm_run_state (FpiSsm *ssm, FpDevice *device)
       self->enroll_user_id = fpi_print_generate_user_id (print);
       para[0] = (self->enroll_id >> 8) & 0xff;   /* fp id high */
       para[1] = self->enroll_id & 0xff;          /* fp id low */
-      memcpy (para + 2, self->enroll_user_id, strlen (self->enroll_user_id));
+      memcpy (para + 2,
+              self->enroll_user_id,
+              MIN (strnlen (self->enroll_user_id, TEMPLATE_UID_SIZE), (gsize) TEMPLATE_UID_SIZE));
       fp_dbg ("user_id: %s", self->enroll_user_id);
       mafp_sensor_cmd (self, MOC_CMD_SAVE_TEMPLATE_INFO, (const uint8_t *) &para, 2 + TEMPLATE_UID_SIZE, fp_enroll_save_tpl_info_cb);
       break;
@@ -2251,7 +2276,7 @@ mafp_probe (FpDevice *device)
 {
   g_autoptr(GUsbInterface) interface = NULL;
   GUsbDevice *usb_dev;
-  GError *error = NULL;
+  g_autoptr(GError) error = NULL;
   FpiDeviceMafpmoc *self = FPI_DEVICE_MAFPMOC (device);
   g_autofree char *serial = NULL;
   uint64_t driver_data;
@@ -2261,7 +2286,7 @@ mafp_probe (FpDevice *device)
   usb_dev = fpi_device_get_usb_device (device);
   if (!g_usb_device_open (usb_dev, &error))
     {
-      fpi_device_probe_complete (device, NULL, NULL, error);
+      fpi_device_probe_complete (device, NULL, NULL, g_steal_pointer (&error));
       return;
     }
 
@@ -2295,15 +2320,15 @@ mafp_probe (FpDevice *device)
       serial = g_usb_device_get_string_descriptor (usb_dev,
                                                    g_usb_device_get_serial_number_index (usb_dev),
                                                    &error);
-      if (error)
+      if (error || !serial)
         {
           g_usb_device_release_interface (fpi_device_get_usb_device (device), 0, 0, NULL);
           goto err_close;
         }
     }
 
-  self->serial_number = g_new0 (char, DEVICE_SN_SIZE);
-  memcpy (self->serial_number, serial, strlen (serial));
+  g_clear_pointer (&self->serial_number, g_free);
+  self->serial_number = g_strndup (serial, DEVICE_SN_SIZE - 1);
   fp_dbg ("serial: %s", serial);
 
   g_usb_device_close (usb_dev, NULL);
@@ -2321,6 +2346,7 @@ mafp_init (FpDevice *device)
   fp_dbg ("mafp_init");
   FpiDeviceMafpmoc *self = FPI_DEVICE_MAFPMOC (device);
   g_autoptr(GError) error = NULL;
+  g_autofree char *serial = NULL;
   uint64_t driver_data;
 
   driver_data = fpi_device_get_driver_data (device);
@@ -2345,6 +2371,36 @@ mafp_init (FpDevice *device)
     fp_dbg ("device has storage");
   else
     fp_dbg ("device no storage");
+
+  if (g_strcmp0 (g_getenv ("FP_DEVICE_EMULATION"), "1") == 0)
+    {
+      serial = g_strdup ("emulated-device");
+    }
+  else
+    {
+      g_autoptr(GError) serial_error = NULL;
+
+      serial = g_usb_device_get_string_descriptor (fpi_device_get_usb_device (device),
+                                                   g_usb_device_get_serial_number_index (fpi_device_get_usb_device (device)),
+                                                   &serial_error);
+      if (serial_error)
+        g_propagate_prefixed_error (&error,
+                                    g_steal_pointer (&serial_error),
+                                    "Failed to read device serial number: ");
+    }
+
+  if (!serial)
+    {
+      if (!error)
+        error = fpi_device_error_new_msg (FP_DEVICE_ERROR_GENERAL,
+                                          "Failed to read device serial number");
+      g_usb_device_release_interface (fpi_device_get_usb_device (device), 0, 0, NULL);
+      fpi_device_open_complete (FP_DEVICE (self), g_steal_pointer (&error));
+      return;
+    }
+
+  g_clear_pointer (&self->serial_number, g_free);
+  self->serial_number = g_strndup (serial, DEVICE_SN_SIZE - 1);
 
   self->templates = g_new0 (mafp_templates_t, 1);
   self->task_ssm = fpi_ssm_new (device, fp_init_run_state, MAPF_INIT_STATES);
@@ -2460,10 +2516,11 @@ mafp_exit (FpDevice *device)
   FpiDeviceMafpmoc *self = FPI_DEVICE_MAFPMOC (device);
 
   mafp_release_interface (self, &error);
-  fpi_device_close_complete (FP_DEVICE (self), error);
-
+  fpi_device_close_complete (FP_DEVICE (self), g_steal_pointer (&error));
   g_clear_pointer (&self->serial_number, g_free);
   g_clear_pointer (&self->enroll_user_id, g_free);
+  if (self->templates)
+    g_clear_pointer (&self->templates->list, g_ptr_array_unref);
   g_clear_pointer (&self->templates, g_free);
 }
 
