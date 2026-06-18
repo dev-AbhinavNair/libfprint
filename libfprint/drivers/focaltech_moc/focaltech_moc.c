@@ -199,6 +199,22 @@ focaltech_moc_check_cmd (uint8_t *response_buf, uint16_t len)
   return ret;
 }
 
+static gboolean
+focaltech_moc_require_response_len (FpiDeviceFocaltechMoc *self,
+                                    gsize                  length_in,
+                                    gsize                  minimum_length,
+                                    const char            *context)
+{
+  if (length_in >= minimum_length)
+    return TRUE;
+
+  fpi_ssm_mark_failed (self->task_ssm,
+                       fpi_device_error_new_msg (FP_DEVICE_ERROR_PROTO,
+                                                 "%s: short response (%zu < %zu)",
+                                                 context, length_in, minimum_length));
+  return FALSE;
+}
+
 static void
 fp_cmd_receive_cb (FpiUsbTransfer *transfer,
                    FpDevice       *device,
@@ -1048,6 +1064,11 @@ focaltech_moc_get_enrolled_info_cb (FpiDeviceFocaltechMoc *self,
       return;
     }
 
+  if (!focaltech_moc_require_response_len (self, length_in,
+                                           sizeof (FpCmd) + sizeof (uint8_t),
+                                           "get enrolled info"))
+    return;
+
   fp_cmd = (FpCmd *) buffer_in;
   items = (struct EnrolledInfoItem *) (fp_cmd + 1);
 
@@ -1061,6 +1082,12 @@ focaltech_moc_get_enrolled_info_cb (FpiDeviceFocaltechMoc *self,
     {
       if (fp_cmd->code == 0x04)
         {
+          if (!focaltech_moc_require_response_len (self, length_in,
+                                                   sizeof (FpCmd) +
+                                                   FOCALTECH_MOC_MAX_FINGERS * sizeof (struct EnrolledInfoItem) +
+                                                   sizeof (uint8_t),
+                                                   "get enrolled info"))
+            return;
           memcpy (&data->enrolled_info->items[0], items,
                   FOCALTECH_MOC_MAX_FINGERS * sizeof (struct EnrolledInfoItem));
 
@@ -1123,6 +1150,11 @@ focaltech_moc_get_enrolled_list_cb (FpiDeviceFocaltechMoc *self,
       return;
     }
 
+  if (!focaltech_moc_require_response_len (self, length_in,
+                                           sizeof (FpCmd) + sizeof (uint8_t),
+                                           "get enrolled list"))
+    return;
+
   fp_cmd = (FpCmd *) buffer_in;
   uid_list = (struct UidList *) (fp_cmd + 1);
 
@@ -1138,6 +1170,12 @@ focaltech_moc_get_enrolled_list_cb (FpiDeviceFocaltechMoc *self,
 
       if (fp_cmd->code == 0x04)
         {
+          if (!focaltech_moc_require_response_len (self, length_in,
+                                                   sizeof (FpCmd) +
+                                                   sizeof (struct UidList) +
+                                                   sizeof (uint8_t),
+                                                   "get enrolled list"))
+            return;
           for (size_t i = 0; i < FOCALTECH_MOC_MAX_FINGERS; i++)
             {
               if (uid_list->actived[i] != 0)
@@ -1147,7 +1185,7 @@ focaltech_moc_get_enrolled_list_cb (FpiDeviceFocaltechMoc *self,
                   struct EnrolledInfoItem *item = NULL;
                   int index;
 
-                  fp_info ("focaltechmoc add slot: %d", i);
+                  fp_info ("focaltechmoc add slot: %zu", i);
 
                   fprint_set_uid (print, user_id->uid, sizeof (user_id->uid));
 
@@ -1164,7 +1202,9 @@ focaltech_moc_get_enrolled_list_cb (FpiDeviceFocaltechMoc *self,
                       username = fp_print_get_username (print);
 
                       if (username != NULL)
-                        strncpy (data->enrolled_info->user_des[index].username, username, 64);
+                        g_strlcpy (data->enrolled_info->user_des[index].username,
+                                   username,
+                                   sizeof (data->enrolled_info->user_des[index].username));
                     }
 
                   g_ptr_array_add (data->list_result, g_object_ref_sink (print));
@@ -1382,6 +1422,11 @@ focaltech_moc_set_enrolled_info_cb (FpiDeviceFocaltechMoc *self,
       return;
     }
 
+  if (!focaltech_moc_require_response_len (self, length_in,
+                                           sizeof (FpCmd) + sizeof (uint8_t),
+                                           "set enrolled info"))
+    return;
+
   fp_cmd = (FpCmd *) buffer_in;
 
   if (fp_cmd->code != 0x04 && fp_cmd->code != 0x09)
@@ -1408,6 +1453,11 @@ focaltech_moc_commit_cb (FpiDeviceFocaltechMoc *self,
       fpi_ssm_mark_failed (self->task_ssm, error);
       return;
     }
+
+  if (!focaltech_moc_require_response_len (self, length_in,
+                                           sizeof (FpCmd) + sizeof (uint8_t),
+                                           "commit"))
+    return;
 
   fp_cmd = (FpCmd *) buffer_in;
 
@@ -1603,6 +1653,11 @@ focaltech_moc_delete_cb (FpiDeviceFocaltechMoc *self,
       fpi_ssm_mark_failed (self->task_ssm, error);
       return;
     }
+
+  if (!focaltech_moc_require_response_len (self, length_in,
+                                           sizeof (FpCmd) + sizeof (uint8_t),
+                                           "delete"))
+    return;
 
   fp_cmd = (FpCmd *) buffer_in;
 
@@ -1834,9 +1889,21 @@ focaltech_moc_clear_storage_cb (FpiDeviceFocaltechMoc *self,
       return;
     }
 
+  if (length_in == 0)
+    {
+      fpi_device_clear_storage_complete (FP_DEVICE (self), NULL);
+      fpi_ssm_next_state (self->task_ssm);
+      return;
+    }
+
+  if (!focaltech_moc_require_response_len (self, length_in,
+                                           sizeof (FpCmd) + sizeof (uint8_t),
+                                           "clear storage"))
+    return;
+
   fp_cmd = (FpCmd *) buffer_in;
 
-  if (fp_cmd && fp_cmd->code != 0x04)
+  if (fp_cmd->code != 0x04 && fp_cmd->code != 0x09)
     {
       fpi_ssm_mark_failed (self->task_ssm,
                            fpi_device_error_new_msg (FP_DEVICE_ERROR_PROTO,
