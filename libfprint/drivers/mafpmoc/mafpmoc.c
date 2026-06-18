@@ -579,7 +579,8 @@ fp_init_handeshake_cb (FpiDeviceMafpmoc    *self,
       return;
     }
 
-  fp_dbg ("result: %d, handshake code %s", resp->result, resp->handshake.code);
+  fp_dbg ("result: %d, handshake code 0x%02x 0x%02x",
+          resp->result, resp->handshake.code[0], resp->handshake.code[1]);
 
   if (resp->result == MAFP_SUCCESS &&
       resp->handshake.code[0] == MAFP_HANDSHAKE_CODE1 &&
@@ -867,7 +868,9 @@ fp_enroll_get_tpl_info_cb (FpiDeviceMafpmoc    *self,
       fpi_ssm_mark_failed (self->task_ssm, g_steal_pointer (&error));
       return;
     }
-  fp_dbg ("result: %d, %s", resp->result, resp->tpl_info.uid);
+
+  uid = g_strndup (resp->tpl_info.uid, TEMPLATE_UID_SIZE);
+  fp_dbg ("result: %d, %s", resp->result, uid);
 
   if (resp->result == MAFP_SUCCESS)
     {
@@ -1975,9 +1978,10 @@ fp_list_get_tpl_info_cb (FpiDeviceMafpmoc    *self,
   if (resp->result == MAFP_SUCCESS)
     {
       FpPrint *print;
+      g_autofree char *uid = g_strndup (resp->tpl_info.uid, TEMPLATE_UID_SIZE);
       mafp_template_t *template = &self->templates->total_list[self->templates->index];
 
-      fp_dbg ("tpl_info: %s", resp->tpl_info.uid);
+      fp_dbg ("tpl_info: %s", uid);
 
       if (resp->tpl_info.uid[0] == 'F' && resp->tpl_info.uid[1] == 'P')
         memcpy (template->uid, resp->tpl_info.uid, sizeof (resp->tpl_info.uid));
@@ -2092,17 +2096,19 @@ fp_delete_get_tpl_info_cb (FpiDeviceMafpmoc    *self,
 
   if (resp->result == MAFP_SUCCESS)
     {
+      g_autofree char *uid = g_strndup (resp->tpl_info.uid, TEMPLATE_UID_SIZE);
+
       fpi_device_get_delete_data (dev, &print);
       mafp_template_t tpl = mafp_template_from_print (print);
       fp_dbg ("target: %s/%s", tpl.uid, tpl.sn);
-      fp_dbg ("find: %s/%s", resp->tpl_info.uid, self->serial_number);
+      fp_dbg ("find: %s/%s", uid, self->serial_number);
       if (g_strcmp0 (self->serial_number, tpl.sn) != 0)
         {
           mafp_mark_failed (dev, self->task_ssm, FP_DEVICE_ERROR_GENERAL,
                             "Failed to match device serial number");
           return;
         }
-      if (!g_str_equal (resp->tpl_info.uid, tpl.uid))
+      if (!g_str_equal (uid, tpl.uid))
         {
           mafp_mark_failed (dev, self->task_ssm, FP_DEVICE_ERROR_GENERAL,
                             "Failed to match template uid");
