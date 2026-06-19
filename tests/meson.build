@@ -10,9 +10,10 @@ envs.set('G_TEST_SRCDIR', meson.current_source_dir())
 envs.set('G_TEST_BUILDDIR', meson.current_build_dir())
 envs.prepend('LD_LIBRARY_PATH', meson.project_build_root() / 'libfprint')
 
-# Set FP_DEVICE_EMULATION so that drivers can adapt (e.g. to use fixed
+# Set fp_device_emulation_env_var so that drivers can adapt (e.g. to use fixed
 # random numbers rather than proper ones)
-envs.set('FP_DEVICE_EMULATION', '1')
+fp_device_emulation_env_var = 'FP_DEVICE_EMULATION'
+envs.set(fp_device_emulation_env_var, '1')
 
 # Set a colon-separated list of native drivers we enable in tests
 envs.set('FP_DRIVERS_ALLOWLIST', ':'.join([
@@ -84,7 +85,7 @@ test_emulation_lib = shared_library('fprint-test-emulation',
 # Paths where the test-emulation helper may be loaded via dlopen
 test_emulation = configuration_data()
 test_emulation.set_quoted('FPI_EMULATION_ENV_VAR',
-  'FP_DEVICE_EMULATION')
+  fp_device_emulation_env_var)
 test_emulation.set_quoted('FPI_EMULATION_HELPER_BUILDDIR',
   meson.project_build_root() / 'tests')
 test_emulation.set_quoted('FPI_EMULATION_HELPER_INSTALLDIR',
