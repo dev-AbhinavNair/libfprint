@@ -853,9 +853,7 @@ secugen_frame_chunk_cb (FpiUsbTransfer *transfer,
   if (remaining > 0)
     memset (self->bulk_dest + self->bulk_offset, 0, remaining);
 
-  /* Outside emulation a complete sensor frame is expected. */
-  if (self->bulk_offset < SECUGEN_RAW_SIZE &&
-      fpi_device_emulation_mode_enabled (dev))
+  if (self->bulk_offset < SECUGEN_RAW_SIZE)
     {
       fp_warn ("Short image data: got %" G_GSIZE_FORMAT ", expected %d",
                self->bulk_offset, SECUGEN_RAW_SIZE);
