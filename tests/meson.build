@@ -74,6 +74,18 @@ if get_option('introspection')
       output: 'create-driver-test.py')
 endif
 
+test_emulation_lib = shared_library('fprint-test-emulation',
+    'test-emulation.c',
+    dependencies: libfprint_private_dep,
+    install: installed_tests,
+    install_dir: installed_tests_execdir,
+)
+test_emulation_lib_name = fs.name(test_emulation_lib.full_path())
+
+# Preload the test-emulation library so that the weak NULL implementation
+# in libfprint is overridden with one that honours FP_DEVICE_EMULATION.
+envs.prepend('LD_PRELOAD', test_emulation_lib.full_path())
+
 env_parser_cmd = '''
 import os;
 print(" ".join([f"{k}={v}" for k, v in os.environ.items()
@@ -86,6 +98,7 @@ envs_str = run_command(python3, '-c', env_parser_cmd,
 
 envs_str = ' '.join([
     envs_str,
+    'LD_PRELOAD=' + (installed_tests_execdir / test_emulation_lib_name),
     'G_TEST_SRCDIR=' + installed_tests_testdir,
     'G_TEST_BUILDDIR=' + installed_tests_execdir,
 ])
@@ -133,7 +146,10 @@ if get_option('introspection')
                     python3,
                     args: ut_args,
                     suite: ut_suite,
-                    depends: libfprint_typelib,
+                    depends: [
+                        libfprint_typelib,
+                        test_emulation_lib,
+                    ],
                     env: envs,
                 )
             endforeach
@@ -187,7 +203,10 @@ if get_option('introspection')
                 env: driver_envs,
                 suite: ['drivers'],
                 timeout: args.get('timeout', 15),
-                depends: libfprint_typelib,
+                depends: [
+                    libfprint_typelib,
+                    test_emulation_lib,
+                ],
             )
 
             if installed_tests
@@ -206,6 +225,7 @@ if get_option('introspection')
                         'driver_test': driver_test,
                         'driver_env': ' '.join([
                             driver_envs_str,
+                            'LD_PRELOAD=' + (installed_tests_execdir / test_emulation_lib_name),
                             'LD_LIBRARY_PATH=' + installed_tests_libdir,
                             # FIXME: Adding this requires gnome-desktop-testing!12
                             # 'GI_TYPELIB_PATH=' + installed_tests_libdir / 'girepository-1.0',

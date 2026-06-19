@@ -1,6 +1,7 @@
 LIBFPRINT_2.0.0 {
 global:
 	fp_*;
+	fpi_device_emulation_mode_enabled;
 local:
 	*;
 };
