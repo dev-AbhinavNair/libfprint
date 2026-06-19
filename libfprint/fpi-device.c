@@ -22,10 +22,12 @@
 #include <math.h>
 #include <fcntl.h>
 #include <errno.h>
+#include <gmodule.h>
 
 #include "fpi-log.h"
 
 #include "fp-device-private.h"
+#include "tests/fpi-test-emulation.h"
 
 /**
  * SECTION: fpi-device
@@ -50,19 +52,58 @@ fp_device_get_instance_private (FpDevice *self)
                             g_type_class_get_instance_private_offset (dev_class));
 }
 
+G_DEFINE_AUTOPTR_CLEANUP_FUNC (GModule, g_module_close)
+
 /**
  * fpi_device_emulation_mode_enabled:
  * @device: The #FpDevice to check
  *
  * Checks if the device is running in emulation mode, which is enabled by
  * setting the FP_DEVICE_EMULATION environment variable to a '1' value but
- * only when the test emulation library is pre-loaded.
+ * only when the test emulation library is loaded.
  * This is used by some drivers to enable special behavior for testing
  * and development purposes.
  */
-__attribute__((weak)) gboolean
+gboolean
   (fpi_device_emulation_mode_enabled) (FpDevice *device)
 {
+  static gboolean (*real_fn)(FpDevice *) = NULL;
+  static gsize emulation_mode = 0;
+
+  if (g_once_init_enter (&emulation_mode))
+    {
+      if (g_strcmp0 (g_getenv (FPI_EMULATION_ENV_VAR), "1") == 0)
+        {
+          const char *dirs[] = {
+            FPI_EMULATION_HELPER_BUILDDIR,
+            FPI_EMULATION_HELPER_INSTALLDIR,
+          };
+
+          for (size_t i = 0; i < G_N_ELEMENTS (dirs); ++i)
+            {
+              g_autofree char *path = NULL;
+              g_autoptr(GModule) mod = NULL;
+              gpointer sym;
+
+              path = g_build_filename (dirs[i], FPI_EMULATION_HELPER_MODULE, NULL);
+              if (!(mod = g_module_open (path, G_MODULE_BIND_LAZY | G_MODULE_BIND_LOCAL)))
+                continue;
+
+              if (!g_module_symbol (mod, "fpi_device_emulation_mode_enabled", &sym))
+                continue;
+
+              real_fn = (gboolean (*)(FpDevice *)) sym;
+              g_steal_pointer (&mod);
+              break;
+            }
+        }
+
+      g_once_init_leave (&emulation_mode, real_fn ? TRUE : G_MAXSIZE);
+    }
+
+  if (real_fn)
+    return real_fn (device);
+
   return FALSE;
 }
 

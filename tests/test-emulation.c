@@ -17,6 +17,7 @@
  */
 
 #include "fpi-device.h"
+#include "fpi-test-emulation.h"
 
 gboolean
   (fpi_device_emulation_mode_enabled) (FpDevice *device)
@@ -25,7 +26,7 @@ gboolean
 
   if (g_once_init_enter (&emulation_mode))
     g_once_init_leave (&emulation_mode,
-                       g_strcmp0 (g_getenv ("FP_DEVICE_EMULATION"), "1") == 0 ?
+                       g_strcmp0 (g_getenv (FPI_EMULATION_ENV_VAR), "1") == 0 ?
                        TRUE : G_MAXSIZE);
 
   return emulation_mode == TRUE;

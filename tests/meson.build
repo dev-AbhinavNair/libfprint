@@ -80,11 +80,18 @@ test_emulation_lib = shared_library('fprint-test-emulation',
     install: installed_tests,
     install_dir: installed_tests_execdir,
 )
-test_emulation_lib_name = fs.name(test_emulation_lib.full_path())
 
-# Preload the test-emulation library so that the weak NULL implementation
-# in libfprint is overridden with one that honours FP_DEVICE_EMULATION.
-envs.prepend('LD_PRELOAD', test_emulation_lib.full_path())
+# Paths where the test-emulation helper may be loaded via dlopen
+test_emulation = configuration_data()
+test_emulation.set_quoted('FPI_EMULATION_ENV_VAR',
+  'FP_DEVICE_EMULATION')
+test_emulation.set_quoted('FPI_EMULATION_HELPER_BUILDDIR',
+  meson.project_build_root() / 'tests')
+test_emulation.set_quoted('FPI_EMULATION_HELPER_INSTALLDIR',
+  libexecdir / 'installed-tests' / versioned_libname)
+test_emulation.set_quoted('FPI_EMULATION_HELPER_MODULE',
+  fs.name(test_emulation_lib.full_path()))
+configure_file(output: 'fpi-test-emulation.h', configuration: test_emulation)
 
 env_parser_cmd = '''
 import os;
@@ -98,7 +105,6 @@ envs_str = run_command(python3, '-c', env_parser_cmd,
 
 envs_str = ' '.join([
     envs_str,
-    'LD_PRELOAD=' + (installed_tests_execdir / test_emulation_lib_name),
     'G_TEST_SRCDIR=' + installed_tests_testdir,
     'G_TEST_BUILDDIR=' + installed_tests_execdir,
 ])
@@ -225,7 +231,6 @@ if get_option('introspection')
                         'driver_test': driver_test,
                         'driver_env': ' '.join([
                             driver_envs_str,
-                            'LD_PRELOAD=' + (installed_tests_execdir / test_emulation_lib_name),
                             'LD_LIBRARY_PATH=' + installed_tests_libdir,
                             # FIXME: Adding this requires gnome-desktop-testing!12
                             # 'GI_TYPELIB_PATH=' + installed_tests_libdir / 'girepository-1.0',

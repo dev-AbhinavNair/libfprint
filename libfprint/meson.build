@@ -210,6 +210,7 @@ deps = [
     enums_dep,
     gio_dep,
     glib_dep,
+    gmodule_dep,
     gobject_dep,
     gusb_dep,
     mathlib_dep,

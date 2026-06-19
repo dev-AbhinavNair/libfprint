@@ -2217,7 +2217,7 @@ dev_change_state (FpImageDevice      *dev,
     case FPI_IMAGE_DEVICE_STATE_AWAIT_FINGER_ON:
       fp_dbg ("Awaiting finger (image-based detection)");
 
-      /* Under FP_DEVICE_EMULATION (set by the umockdev test harness so
+      /* Under fpi_device_emulation (set by the umockdev test harness so
        * drivers can adapt to replay; see tests/meson.build) skip the
        * timer-driven detect poll: each poll consumes a full ~658KB frame,
        * so exercising it in replay would require recording an unbounded
