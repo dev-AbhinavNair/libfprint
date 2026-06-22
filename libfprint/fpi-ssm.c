@@ -657,6 +657,8 @@ fpi_ssm_dup_error (FpiSsm *machine)
 void
 fpi_ssm_silence_debug (FpiSsm *machine)
 {
+  g_return_if_fail (machine != NULL);
+
   machine->silence = TRUE;
 }
 
@@ -676,6 +678,7 @@ void
 fpi_ssm_usb_transfer_cb (FpiUsbTransfer *transfer, FpDevice *device,
                          gpointer unused_data, GError *error)
 {
+  g_return_if_fail (transfer != NULL);
   g_return_if_fail (transfer->ssm);
 
   if (error)
@@ -705,6 +708,7 @@ fpi_ssm_usb_transfer_with_weak_pointer_cb (FpiUsbTransfer *transfer,
                                            FpDevice *device, gpointer weak_ptr,
                                            GError *error)
 {
+  g_return_if_fail (transfer != NULL);
   g_return_if_fail (transfer->ssm);
 
   if (weak_ptr)
@@ -729,6 +733,7 @@ void
 fpi_ssm_spi_transfer_cb (FpiSpiTransfer *transfer, FpDevice *device,
                          gpointer unused_data, GError *error)
 {
+  g_return_if_fail (transfer != NULL);
   g_return_if_fail (transfer->ssm);
 
   if (error)
@@ -758,6 +763,7 @@ fpi_ssm_spi_transfer_with_weak_pointer_cb (FpiSpiTransfer *transfer,
                                            FpDevice *device, gpointer weak_ptr,
                                            GError *error)
 {
+  g_return_if_fail (transfer != NULL);
   g_return_if_fail (transfer->ssm);
 
   if (weak_ptr)
