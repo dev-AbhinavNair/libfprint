@@ -42,7 +42,7 @@ static gsize block_size = 0;
  * Drivers should always use this API rather than calling read/write/ioctl on
  * the spidev device.
  *
- * Setting G_MESSAGES_DEBUG and FP_DEBUG_TRANSFER will result in the message
+ * Setting %G_MESSAGES_DEBUG and %FP_DEBUG_TRANSFER will result in the message
  * content to be dumped.
  */
 

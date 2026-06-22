@@ -31,6 +31,9 @@
  *
  * Drivers should use this API only rather than accessing the GUsbDevice
  * directly in most cases.
+ *
+ * Setting %G_MESSAGES_DEBUG and %FP_DEBUG_TRANSFER will result in the message
+ * content to be dumped.
  */
 
 
