@@ -44,14 +44,7 @@ void
   line = g_string_new ("");
 
   for (gint i = 0; i < len; i++)
-    {
-      g_string_append_printf (line, "%02x ", buf[i]);
-      if ((i + 1) % 16 == 0)
-        {
-          g_log (log_domain, G_LOG_LEVEL_DEBUG, "%s", line->str);
-          g_string_set_size (line, 0);
-        }
-    }
+    g_string_append_printf (line, "%02x", buf[i]);
 
   if (line->len)
     g_log (log_domain, G_LOG_LEVEL_DEBUG, "%s", line->str);
