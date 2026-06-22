@@ -124,3 +124,5 @@ void (fpi_dbg_hex_dump_bytes) (const gchar *log_domain,
 #define fp_dbg_hex_dump_bytes(bytes) \
   (fpi_dbg_hex_dump_bytes) \
   (G_LOG_DOMAIN, (bytes))
+
+gboolean fpi_log_is_debug_transfer_enabled (void);

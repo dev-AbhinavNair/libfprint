@@ -353,6 +353,7 @@ fp_dbg_hex_dump_data
 fp_info
 fp_warn
 fp_err
+fpi_log_is_debug_transfer_enabled
 BUG_ON
 BUG
 </SECTION>

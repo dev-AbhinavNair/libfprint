@@ -52,7 +52,7 @@ G_DEFINE_BOXED_TYPE (FpiSpiTransfer, fpi_spi_transfer, fpi_spi_transfer_ref, fpi
 static void
 log_transfer (FpiSpiTransfer *transfer, gboolean submit, GError *error)
 {
-  if (g_getenv ("FP_DEBUG_TRANSFER"))
+  if (fpi_log_is_debug_transfer_enabled ())
     {
       if (submit)
         {

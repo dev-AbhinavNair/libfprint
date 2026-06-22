@@ -18,6 +18,7 @@
  */
 
 #include "fpi-usb-transfer.h"
+#include "fpi-log.h"
 
 /**
  * SECTION:fpi-usb-transfer
@@ -38,7 +39,7 @@ G_DEFINE_BOXED_TYPE (FpiUsbTransfer, fpi_usb_transfer, fpi_usb_transfer_ref, fpi
 static void
 log_transfer (FpiUsbTransfer *transfer, gboolean submit, GError *error)
 {
-  if (g_getenv ("FP_DEBUG_TRANSFER"))
+  if (fpi_log_is_debug_transfer_enabled ())
     {
       if (!submit)
         {

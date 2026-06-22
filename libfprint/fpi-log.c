@@ -22,6 +22,27 @@
 #include "fpi-log.h"
 
 /**
+ * fpi_log_is_debug_transfer_enabled:
+ *
+ * Checks if the %FP_DEBUG_TRANSFER environment variable is set.
+ *
+ * Returns: %TRUE if %FP_DEBUG_TRANSFER is set, %FALSE otherwise
+ */
+gboolean
+fpi_log_is_debug_transfer_enabled (void)
+{
+  static gsize debug_transfer_enabled = 0;
+
+  if (g_once_init_enter (&debug_transfer_enabled))
+    {
+      gsize enabled = g_getenv ("FP_DEBUG_TRANSFER") != NULL ? TRUE : G_MAXSIZE;
+      g_once_init_leave (&debug_transfer_enabled, enabled);
+    }
+
+  return debug_transfer_enabled == TRUE;
+}
+
+/**
  * fpi_dbg_hex_dump_data:
  * @buf: Bytes buffer to dump
  * @len: Length of @buf to dump
