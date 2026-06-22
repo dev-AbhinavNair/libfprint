@@ -65,25 +65,9 @@ log_transfer (FpiUsbTransfer *transfer, gboolean submit, GError *error)
 
       if (!submit == !!(transfer->endpoint & FPI_USB_ENDPOINT_IN))
         {
-          g_autoptr(GString) line = NULL;
-          gssize dump_len;
-
-          dump_len = (transfer->endpoint & FPI_USB_ENDPOINT_IN) ? transfer->actual_length : transfer->length;
-
-          line = g_string_new ("");
-          /* Dump the buffer. */
-          for (gint i = 0; i < dump_len; i++)
-            {
-              g_string_append_printf (line, "%02x ", transfer->buffer[i]);
-              if ((i + 1) % 16 == 0)
-                {
-                  g_debug ("%s", line->str);
-                  g_string_set_size (line, 0);
-                }
-            }
-
-          if (line->len)
-            g_debug ("%s", line->str);
+          fp_dbg_hex_dump_data (transfer->buffer,
+                                (transfer->endpoint & FPI_USB_ENDPOINT_IN) ?
+                                transfer->actual_length : transfer->length);
         }
     }
 }

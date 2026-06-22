@@ -21,6 +21,7 @@ libfprint_private_sources = [
     'fpi-device.c',
     'fpi-image-device.c',
     'fpi-image.c',
+    'fpi-log.c',
     'fpi-print.c',
     'fpi-ssm.c',
     'fpi-usb-transfer.c',
