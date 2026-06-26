@@ -764,7 +764,7 @@ fp_print_deserialize (const guchar *data,
   g_autoptr(GVariant) value = NULL;
   g_autoptr(GVariant) print_data = NULL;
   g_autoptr(GDate) date = NULL;
-  guchar *aligned_data = NULL;
+  g_autoptr(GBytes) bytes = NULL;
   guint8 finger_int8;
   FpFinger finger;
   g_autofree gchar *username = NULL;
@@ -786,14 +786,10 @@ fp_print_deserialize (const guchar *data,
    * of this function (meaning we don't need to keep the data around.
    */
 
-  /* To support GLIB < 2.60 we need to make sure that the memory is aligned correctly.
-   * We also need to copy the backing store for the raw data that we may keep for
-   * longer. */
-  aligned_data = g_malloc (length - 3);
-  memcpy (aligned_data, data + 3, length - 3);
-  raw_value = g_variant_new_from_data (FPI_PRINT_VARIANT_TYPE,
-                                       aligned_data, length - 3,
-                                       FALSE, g_free, aligned_data);
+  /* We need to copy the backing store for the raw data that we may keep for
+   * longer. Using a GBytes also ensures the data is correctly aligned. */
+  bytes = g_bytes_new (data + 3, length - 3);
+  raw_value = g_variant_new_from_bytes (FPI_PRINT_VARIANT_TYPE, bytes, FALSE);
 
   if (!raw_value)
     goto invalid_format;
