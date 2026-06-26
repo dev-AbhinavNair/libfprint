@@ -165,11 +165,7 @@ process_cmds (FpDeviceVirtualDevice * self,
     {
       g_autofree gchar *cmd = NULL;
 
-      /* TODO: g_ptr_array_steal_index requires GLib 2.58, we depend on 2.56 */
-      cmd = g_ptr_array_index (self->pending_commands, 0);
-      g_ptr_array_index (self->pending_commands, 0) = NULL;
-      g_ptr_array_remove_index (self->pending_commands, 0);
-
+      cmd = g_ptr_array_steal_index (self->pending_commands, 0);
       g_debug ("Processing command %s", cmd);
 
       /* These are always processed. */
