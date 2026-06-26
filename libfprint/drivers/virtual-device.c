@@ -545,6 +545,9 @@ dev_verify (FpDevice *dev)
       else
         {
           success = fp_print_equal (print, new_scan);
+
+          if (success)
+            fp_print_set_finger (new_scan, fp_print_get_finger (print));
         }
 
       if (!self->match_reported)
