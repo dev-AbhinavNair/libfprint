@@ -119,7 +119,7 @@ drivers_info = {
     'aes1610': { 'helper': ['aeslib'] },
     'aes1660': { 'helper': ['aeslib', 'aesx660'] },
     'aes2660': { 'helper': ['aeslib', 'aesx660'] },
-    'aes2501': { 'helper': ['aeslib'], 'endian_dependent': true },
+    'aes2501': { 'helper': ['aeslib'] },
     'aes2550': { 'helper': ['aeslib'] },
     'vfs101': {},
     'vfs301': { 'endian_dependent': true },
