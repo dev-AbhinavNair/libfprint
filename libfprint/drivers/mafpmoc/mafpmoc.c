@@ -108,7 +108,7 @@ ma_protocol_build_package (uint32_t       package_len,
   memcpy (ppackage, &header, PACKAGE_HEADER_SIZE);
 
   if (cmd_len)
-    memcpy (ppackage + PACKAGE_HEADER_SIZE, &cmd, 1);
+    ppackage[PACKAGE_HEADER_SIZE] = cmd & 0xFF;
 
   if (data_len)
     memcpy (ppackage + PACKAGE_HEADER_SIZE + cmd_len, data + !cmd_len, data_len);

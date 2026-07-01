@@ -141,7 +141,7 @@ drivers_info = {
     'fpcmoc': {},
     'realtek': {},
     'focaltech_moc': {},
-    'mafpmoc': { 'endian_dependent': true },
+    'mafpmoc': {},
     'secugen': {},
 
     # SPI driver (non-optional if SPI is available)
