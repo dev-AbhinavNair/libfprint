@@ -138,7 +138,7 @@ drivers_info = {
     'upekts': {},
     'goodixmoc': { 'endian_dependent': true },
     'nb1010': {},
-    'fpcmoc': { 'endian_dependent': true },
+    'fpcmoc': {},
     'realtek': {},
     'focaltech_moc': {},
     'mafpmoc': { 'endian_dependent': true },

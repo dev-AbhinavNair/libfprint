@@ -107,6 +107,34 @@ fpc_suspend_resume_cb (FpiUsbTransfer *transfer,
 }
 
 static void
+fpc_evt_data_from_le (fpc_cmd_response_t *evt)
+{
+  evt->evt_hdr.cmdid = GUINT32_FROM_LE (evt->evt_hdr.cmdid);
+  evt->evt_hdr.length = GUINT32_FROM_LE (evt->evt_hdr.length);
+  evt->evt_hdr.status = GUINT32_FROM_LE (evt->evt_hdr.status);
+
+  if (evt->evt_hdr.cmdid == FPC_EVT_INIT_RESULT)
+    {
+      evt->evt_inited.sensor = GUINT16_FROM_LE (evt->evt_inited.sensor);
+      evt->evt_inited.hw_id = GUINT16_FROM_LE (evt->evt_inited.hw_id);
+      evt->evt_inited.img_w = GUINT16_FROM_LE (evt->evt_inited.img_w);
+      evt->evt_inited.img_h = GUINT16_FROM_LE (evt->evt_inited.img_h);
+      evt->evt_inited.fw_capabilities = GUINT16_FROM_LE (evt->evt_inited.fw_capabilities);
+    }
+  else if (evt->evt_hdr.cmdid == FPC_EVT_FID_DATA)
+    {
+      evt->evt_enum_fids.status = GINT32_FROM_LE (evt->evt_enum_fids.status);
+      evt->evt_enum_fids.num_ids = GUINT32_FROM_LE (evt->evt_enum_fids.num_ids);
+
+      for (guint32 i = 0; i < evt->evt_enum_fids.num_ids && i < FPC_TEMPLATES_MAX; i++)
+        {
+          evt->evt_enum_fids.fid_data[i].identity_type = GUINT32_FROM_LE (evt->evt_enum_fids.fid_data[i].identity_type);
+          evt->evt_enum_fids.fid_data[i].identity_size = GUINT32_FROM_LE (evt->evt_enum_fids.fid_data[i].identity_size);
+        }
+    }
+}
+
+static void
 fpc_cmd_receive_cb (FpiUsbTransfer *transfer,
                     FpDevice       *device,
                     gpointer        user_data,
@@ -173,6 +201,7 @@ fpc_cmd_receive_cb (FpiUsbTransfer *transfer,
             }
 
           memcpy (&evt_data, transfer->buffer, transfer->actual_length);
+          fpc_evt_data_from_le (&evt_data);
 
           if (data->callback)
             data->callback (self, (guint8 *) &evt_data, NULL);
@@ -697,6 +726,7 @@ fpc_enroll_create_cb (FpiDeviceFpcMoc *self,
     }
 
   presp = (FPC_BEGIN_ENROL *) data;
+  presp->status = GINT32_FROM_LE (presp->status);
   if (presp->status != 0)
     {
       error = fpi_device_error_new_msg (FP_DEVICE_ERROR_GENERAL,
@@ -732,6 +762,8 @@ fpc_enroll_update_cb (FpiDeviceFpcMoc *self,
     }
 
   presp = (FPC_ENROL *) data;
+  presp->status = GINT32_FROM_LE (presp->status);
+  presp->remaining = GUINT32_FROM_LE (presp->remaining);
   fp_dbg ("Enrol Update status: %d, remaining: %d", presp->status, presp->remaining);
   switch (presp->status)
     {
@@ -834,6 +866,8 @@ fpc_enroll_complete_cb (FpiDeviceFpcMoc *self,
   if (check_data (data, &error))
     {
       presp = (FPC_END_ENROL *) data;
+      presp->status = GINT32_FROM_LE (presp->status);
+      presp->fid = GUINT32_FROM_LE (presp->fid);
       if (presp->status != 0)
         {
           error = fpi_device_error_new_msg (FP_DEVICE_ERROR_GENERAL,
@@ -869,6 +903,10 @@ fpc_enroll_check_duplicate_cb (FpiDeviceFpcMoc *self,
   if (check_data (data, &error))
     {
       presp = (FPC_IDENTIFY *) data;
+      presp->status = GINT32_FROM_LE (presp->status);
+      presp->identity_type = GUINT32_FROM_LE (presp->identity_type);
+      presp->identity_size = GUINT32_FROM_LE (presp->identity_size);
+      presp->subfactor = GUINT32_FROM_LE (presp->subfactor);
       if ((presp->status == 0) && (presp->subfactor == FPC_SUBTYPE_RESERVED) &&
           (presp->identity_type == FPC_IDENTITY_TYPE_RESERVED) &&
           (presp->identity_size <= SECURITY_MAX_SID_SIZE))
@@ -916,6 +954,7 @@ fpc_enroll_commit_cb (FpiDeviceFpcMoc *self,
   if (check_data (data, &error))
     {
       result = (gint32 *) data;
+      *result = GINT32_FROM_LE (*result);
       if (*result != 0)
         {
           error = fpi_device_error_new_msg (FP_DEVICE_ERROR_DATA_FULL,
@@ -950,7 +989,7 @@ fpc_enroll_sm_run_state (FpiSsm *ssm, FpDevice *device)
       {
         FPC_FID_DATA pquery_data = {0};
         gsize query_data_len = 0;
-        guint32 wildcard_value = FPC_IDENTITY_WILDCARD;
+        guint32 wildcard_value = GUINT32_TO_LE (FPC_IDENTITY_WILDCARD);
         query_data_len = sizeof (FPC_FID_DATA);
         pquery_data.identity_type = FPC_IDENTITY_TYPE_WILDCARD;
         pquery_data.reserved = 16;
@@ -958,6 +997,11 @@ fpc_enroll_sm_run_state (FpiSsm *ssm, FpDevice *device)
         pquery_data.subfactor = (guint32) FPC_SUBTYPE_ANY;
         memcpy (&pquery_data.data[0],
                 &wildcard_value, pquery_data.identity_size);
+
+        pquery_data.identity_type = GUINT32_TO_LE (pquery_data.identity_type);
+        pquery_data.reserved = GUINT32_TO_LE (pquery_data.reserved);
+        pquery_data.identity_size = GUINT32_TO_LE (pquery_data.identity_size);
+        pquery_data.subfactor = GUINT32_TO_LE (pquery_data.subfactor);
 
         cmd_data.cmdtype = FPC_CMDTYPE_TO_DEVICE_EVTDATA;
         cmd_data.request = FPC_CMD_ENUM;
@@ -988,7 +1032,7 @@ fpc_enroll_sm_run_state (FpiSsm *ssm, FpDevice *device)
 
     case FPC_ENROLL_CAPTURE:
       {
-        guint32 capture_id = FPC_CAPTUREID_RESERVED;
+        guint32 capture_id = GUINT32_TO_LE (FPC_CAPTUREID_RESERVED);
         fpi_device_report_finger_status_changes (device,
                                                  FP_FINGER_STATUS_NEEDED,
                                                  FP_FINGER_STATUS_NONE);
@@ -1105,6 +1149,11 @@ fpc_enroll_sm_run_state (FpiSsm *ssm, FpDevice *device)
         memcpy (&data.data[0],
                 user_id, user_id_len);
 
+        data.identity_type = GUINT32_TO_LE (data.identity_type);
+        data.reserved = GUINT32_TO_LE (data.reserved);
+        data.identity_size = GUINT32_TO_LE (data.identity_size);
+        data.subfactor = GUINT32_TO_LE (data.subfactor);
+
         cmd_data.cmdtype = FPC_CMDTYPE_TO_DEVICE;
         cmd_data.request = FPC_CMD_BIND_IDENTITY;
         cmd_data.value = 0x0;
@@ -1213,6 +1262,10 @@ fpc_verify_cb (FpiDeviceFpcMoc *self,
     }
 
   presp = (FPC_IDENTIFY *) data;
+  presp->status = GINT32_FROM_LE (presp->status);
+  presp->identity_type = GUINT32_FROM_LE (presp->identity_type);
+  presp->identity_size = GUINT32_FROM_LE (presp->identity_size);
+  presp->subfactor = GUINT32_FROM_LE (presp->subfactor);
   current_action = fpi_device_get_current_action (device);
 
   g_assert (current_action == FPI_DEVICE_ACTION_VERIFY ||
@@ -1292,7 +1345,7 @@ fpc_verify_sm_run_state (FpiSsm *ssm, FpDevice *device)
     {
     case FPC_VERIFY_CAPTURE:
       {
-        guint32 capture_id = FPC_CAPTUREID_RESERVED;
+        guint32 capture_id = GUINT32_TO_LE (FPC_CAPTUREID_RESERVED);
         fpi_device_report_finger_status_changes (device,
                                                  FP_FINGER_STATUS_NEEDED,
                                                  FP_FINGER_STATUS_NONE);
@@ -1500,6 +1553,8 @@ fpc_init_load_db_cb (FpiDeviceFpcMoc *self,
       return;
     }
   presp = (FPC_LOAD_DB *) data;
+  presp->status = GINT32_FROM_LE (presp->status);
+  presp->database_id_size = GUINT32_FROM_LE (presp->database_id_size);
   if (presp->status)
     {
       fp_err ("%s Load DB failed: %d - Expect to create a new one", G_STRFUNC, presp->status);
@@ -1534,7 +1589,7 @@ static void
 fpc_init_sm_run_state (FpiSsm *ssm, FpDevice *device)
 {
   FpiDeviceFpcMoc *self = FPI_DEVICE_FPCMOC (device);
-  guint32 session_id = FPC_SESSIONID_RESERVED;
+  guint32 session_id = GUINT32_TO_LE (FPC_SESSIONID_RESERVED);
   CommandData cmd_data = {0};
 
   switch (fpi_ssm_get_cur_state (ssm))
@@ -1740,7 +1795,7 @@ fpc_dev_template_list (FpDevice *device)
   CommandData cmd_data = {0};
   FPC_FID_DATA pquery_data = {0};
   gsize query_data_len = 0;
-  guint32 wildcard_value = FPC_IDENTITY_WILDCARD;
+  guint32 wildcard_value = GUINT32_TO_LE (FPC_IDENTITY_WILDCARD);
 
   fp_dbg ("%s enter -->", G_STRFUNC);
 
@@ -1751,6 +1806,11 @@ fpc_dev_template_list (FpDevice *device)
   pquery_data.subfactor = (guint32) FPC_SUBTYPE_ANY;
   memcpy (&pquery_data.data[0],
           &wildcard_value, pquery_data.identity_size);
+
+  pquery_data.identity_type = GUINT32_TO_LE (pquery_data.identity_type);
+  pquery_data.reserved = GUINT32_TO_LE (pquery_data.reserved);
+  pquery_data.identity_size = GUINT32_TO_LE (pquery_data.identity_size);
+  pquery_data.subfactor = GUINT32_TO_LE (pquery_data.subfactor);
 
   cmd_data.cmdtype = FPC_CMDTYPE_TO_DEVICE_EVTDATA;
   cmd_data.request = FPC_CMD_ENUM;
@@ -1850,6 +1910,12 @@ fpc_dev_template_delete (FpDevice *device)
   data.identity_size = user_id_len;
   data.subfactor = (guint32) finger;
   memcpy (&data.data[0], user_id, user_id_len);
+
+  data.identity_type = GUINT32_TO_LE (data.identity_type);
+  data.reserved = GUINT32_TO_LE (data.reserved);
+  data.identity_size = GUINT32_TO_LE (data.identity_size);
+  data.subfactor = GUINT32_TO_LE (data.subfactor);
+
   cmd_data.cmdtype = FPC_CMDTYPE_TO_DEVICE;
   cmd_data.request = FPC_CMD_DELETE_TEMPLATE;
   cmd_data.value = 0x0;
