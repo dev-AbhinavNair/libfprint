@@ -136,7 +136,7 @@ drivers_info = {
     'upektc': {},
     'upeksonly': {},
     'upekts': {},
-    'goodixmoc': { 'endian_dependent': true },
+    'goodixmoc': {},
     'nb1010': {},
     'fpcmoc': {},
     'realtek': {},
