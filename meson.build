@@ -142,7 +142,7 @@ drivers_info = {
     'realtek': {},
     'focaltech_moc': {},
     'mafpmoc': { 'endian_dependent': true },
-    'secugen': { 'endian_dependent': true },
+    'secugen': {},
 
     # SPI driver (non-optional if SPI is available)
     'elanspi': { 'spi': true, 'helper': ['udev'], 'optional': not have_spi, 'endian_dependent': true },
