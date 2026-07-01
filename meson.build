@@ -132,7 +132,7 @@ drivers_info = {
     'synaptics': {},
     'elan': { 'endian_dependent': true },
     'elanmoc': {},
-    'uru4000': { 'helper': ['openssl'], 'endian_dependent': true },
+    'uru4000': { 'helper': ['openssl'] },
     'upektc': {},
     'upeksonly': {},
     'upekts': {},
