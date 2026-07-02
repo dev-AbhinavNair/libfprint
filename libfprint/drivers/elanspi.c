@@ -1334,7 +1334,6 @@ static void
 elanspi_fp_frame_stitch_and_submit (FpiDeviceElanSpi *self)
 {
   g_autoptr(FpImage) img = NULL;
-  g_autoptr(FpImage) scaled = NULL;
   struct fpi_frame_asmbl_ctx assembling_ctx = {
     .image_width = (self->frame_width * 3) / 2,
 
@@ -1349,12 +1348,11 @@ elanspi_fp_frame_stitch_and_submit (FpiDeviceElanSpi *self)
 
   fpi_do_movement_estimation (&assembling_ctx, frame_start);
   img = fpi_assemble_frames (&assembling_ctx, frame_start);
-  scaled = fpi_image_resize (img, 2, 2);
-
-  scaled->flags |= FPI_IMAGE_PARTIAL | FPI_IMAGE_COLORS_INVERTED;
+  fpi_image_enhance (img, NULL);
+  img->flags |= FPI_IMAGE_PARTIAL | FPI_IMAGE_COLORS_INVERTED;
 
   /* submit image */
-  fpi_image_device_image_captured (FP_IMAGE_DEVICE (self), g_steal_pointer (&scaled));
+  fpi_image_device_image_captured (FP_IMAGE_DEVICE (self), g_steal_pointer (&img));
 
   /* clean out frame data */
   g_slist_free_full (g_steal_pointer (&self->fp_frame_list), g_free);
@@ -1562,6 +1560,8 @@ elanspi_open (FpImageDevice *dev)
 
   G_DEBUG_HERE ();
 
+  fpi_image_device_set_diversity_threshold (dev, 18);
+
   int spi_fd = open (fpi_device_get_udev_data (FP_DEVICE (dev), FPI_DEVICE_UDEV_SUBTYPE_SPIDEV), O_RDWR);
 
   if (spi_fd < 0)
@@ -1700,9 +1700,9 @@ fpi_device_elanspi_class_init (FpiDeviceElanSpiClass *klass)
   dev_class->type = FP_DEVICE_TYPE_UDEV;
   dev_class->id_table = elanspi_id_table;
   dev_class->scan_type = FP_SCAN_TYPE_SWIPE;
-  dev_class->nr_enroll_stages = 7;       /* these sensors are very hit or miss, may as well record a few extras */
+  dev_class->nr_enroll_stages = 11;       /* these sensors are very hit or miss, may as well record a few extras */
 
-  img_class->bz3_threshold = 24;
+  img_class->bz3_threshold = 10;
   img_class->img_open = elanspi_open;
   img_class->activate = elanspi_activate;
   img_class->deactivate = elanspi_deactivate;
