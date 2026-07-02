@@ -61,6 +61,79 @@ being shipped in an open source project.
 </div>
 
 
+## ElanSPI Enhancement Fork
+
+This fork adds several improvements for the **ElanTech ELAN7001 SPI** fingerprint
+sensor found in **ASUS VivoBook X515EA** and similar laptops.
+
+### Why This Exists
+
+The upstream elanspi driver produces poor recognition rates (~50% verify) because:
+- **No image enhancement** — raw sensor output has low contrast and noise
+- **Only 7 enroll stages** — not enough template coverage for reliable matching
+- **No diversity checking** — all enrollment swipes can cover the same finger area
+- **bz3_threshold of 24** — too conservative for this sensor's image quality
+
+### Changes
+
+1. **`fpi_image_enhance()`** (new function in `fpi-image.c`)
+   - Block contrast normalization (64x64 tiles) to compensate for uneven
+     illumination and pressure
+   - Unsharp masking (5x5 gaussian kernel, sigma ~1.0, amount 0.5) to
+     emphasize ridge edges
+   - Replaces the old bilinear upscale (`fpi_image_resize(img, 2, 2)`)
+
+2. **`FP_DEVICE_RETRY_DIFFERENT_AREA`** (new retry code in `fp-device.h`)
+   - Lets drivers request a different finger area when an enrollment scan
+     is too similar to a previously stored scan
+
+3. **Diversity threshold** (new in `fpi-image-device`)
+   - Per-device configurable via `fpi_image_device_set_diversity_threshold()`
+   - Compares each new enrollment scan against all stored scans using
+     Bozorth3 matching
+   - Rejects scans exceeding the threshold with `FP_DEVICE_RETRY_DIFFERENT_AREA`
+   - Stores accepted prints in `enroll_prints` array for comparison
+
+4. **ElanSPI driver tuning** (`drivers/elanspi.c`)
+   - Replace `fpi_image_resize` → `fpi_image_enhance` for proper image
+     processing
+   - `bz3_threshold`: 24 → 10 (more forgiving Bozorth3 matching)
+   - `nr_enroll_stages`: 7 → 11 (more enrollment data)
+   - Enable diversity threshold at 18
+
+### How This Was Built
+
+This fork was developed interactively using **opencode/big-pickle**
+— an AI coding assistant — by a non-embedded-engineer user with no C
+or GObject expertise. The AI analyzed the libfprint source, proposed
+changes, fixed bugs (including a double-free in the diversity check
+code path), and iterated through ~15 build-test cycles over 2 days.
+
+### Building
+
+```bash
+cd libfprint
+meson setup builddir
+ninja -C builddir
+```
+
+For temporary use without system installation:
+
+```bash
+sudo pkill fprintd
+LD_LIBRARY_PATH=$PWD/builddir/libfprint /usr/lib/fprintd
+# In another terminal:
+fprintd-enroll
+```
+
+On reboot, the system reverts to the stock library automatically.
+
+### Related Repos
+
+- **fprintd fork**: https://github.com/dev-AbhinavNair/fprintd
+  (needs matching `FP_DEVICE_RETRY_DIFFERENT_AREA` handling)
+
+
 <!----------------------------------------------------------------------------->
 
 [Documentation]: https://fprint.freedesktop.org/libfprint-dev/
