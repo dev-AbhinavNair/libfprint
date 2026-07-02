@@ -1334,6 +1334,7 @@ static void
 elanspi_fp_frame_stitch_and_submit (FpiDeviceElanSpi *self)
 {
   g_autoptr(FpImage) img = NULL;
+  g_autoptr(FpImage) scaled = NULL;
   struct fpi_frame_asmbl_ctx assembling_ctx = {
     .image_width = (self->frame_width * 3) / 2,
 
@@ -1348,11 +1349,11 @@ elanspi_fp_frame_stitch_and_submit (FpiDeviceElanSpi *self)
 
   fpi_do_movement_estimation (&assembling_ctx, frame_start);
   img = fpi_assemble_frames (&assembling_ctx, frame_start);
-  fpi_image_enhance (img, NULL);
-  img->flags |= FPI_IMAGE_PARTIAL | FPI_IMAGE_COLORS_INVERTED;
+  scaled = fpi_image_resize (img, 2, 2);
+  scaled->flags |= FPI_IMAGE_PARTIAL | FPI_IMAGE_COLORS_INVERTED;
 
   /* submit image */
-  fpi_image_device_image_captured (FP_IMAGE_DEVICE (self), g_steal_pointer (&img));
+  fpi_image_device_image_captured (FP_IMAGE_DEVICE (self), g_steal_pointer (&scaled));
 
   /* clean out frame data */
   g_slist_free_full (g_steal_pointer (&self->fp_frame_list), g_free);
