@@ -152,3 +152,122 @@ fpi_image_resize (FpImage *orig_img,
   return g_object_ref (orig_img);
 #endif
 }
+
+/**
+ * fpi_image_enhance:
+ * @image: a #FpImage
+ * @error: (out)(optional): return location for an error
+ *
+ * Enhance fingerprint image quality using block contrast normalization
+ * and unsharp masking.
+ *
+ * Block contrast normalization divides the image into 64x64 pixel blocks
+ * and applies contrast stretching within each block, mapping the minimum
+ * pixel value to 0 and maximum to 255. This compensates for uneven
+ * illumination and pressure across the finger.
+ *
+ * Unsharp masking subtracts a gaussian-blurred version from the original
+ * to emphasize ridge edges. Uses a 5x5 kernel with sigma ~1.0 and
+ * amount 0.5.
+ *
+ * Returns: %TRUE on success, %FALSE on error with @error set.
+ */
+gboolean
+fpi_image_enhance (FpImage *image,
+                   GError **error)
+{
+  guint8 *data = image->data;
+  gint w = image->width;
+  gint h = image->height;
+  gint x, y, bx, by;
+  gint block_size = 64;
+  gint n_blocks_x = (w + block_size - 1) / block_size;
+  gint n_blocks_y = (h + block_size - 1) / block_size;
+  g_autofree guint8 *enhanced = g_malloc (w * h);
+  g_autofree guint8 *blurred = g_malloc (w * h);
+
+  /* Block contrast normalization */
+  for (by = 0; by < n_blocks_y; by++)
+    {
+      for (bx = 0; bx < n_blocks_x; bx++)
+        {
+          gint block_min = 255, block_max = 0;
+
+          for (y = by * block_size; y < (by + 1) * block_size && y < h; y++)
+            {
+              for (x = bx * block_size; x < (bx + 1) * block_size && x < w; x++)
+                {
+                  guint8 p = data[y * w + x];
+                  if (p < block_min) block_min = p;
+                  if (p > block_max) block_max = p;
+                }
+            }
+
+          gint range = block_max - block_min;
+          if (range < 10) range = 10;
+
+          for (y = by * block_size; y < (by + 1) * block_size && y < h; y++)
+            {
+              for (x = bx * block_size; x < (bx + 1) * block_size && x < w; x++)
+                {
+                  gint idx = y * w + x;
+                  gint v = data[idx];
+                  v = (v - block_min) * 255 / range;
+                  if (v < 0) v = 0;
+                  if (v > 255) v = 255;
+                  enhanced[idx] = v;
+                }
+            }
+        }
+    }
+
+  /* Gaussian blur (5x5, sigma ~1.0) */
+  {
+    gint kernel[5][5] = {
+      {1, 4, 7, 4, 1},
+      {4, 16, 26, 16, 4},
+      {7, 26, 41, 26, 7},
+      {4, 16, 26, 16, 4},
+      {1, 4, 7, 4, 1},
+    };
+    gint kernel_sum = 273;
+
+    for (y = 0; y < h; y++)
+      {
+        for (x = 0; x < w; x++)
+          {
+            gint sum = 0;
+
+            for (gint ky = -2; ky <= 2; ky++)
+              {
+                for (gint kx = -2; kx <= 2; kx++)
+                  {
+                    gint px = x + kx;
+                    gint py = y + ky;
+                    if (px >= 0 && px < w && py >= 0 && py < h)
+                      sum += enhanced[py * w + px] * kernel[ky + 2][kx + 2];
+                    else
+                      sum += enhanced[y * w + x] * kernel[ky + 2][kx + 2];
+                  }
+              }
+
+            blurred[y * w + x] = sum / kernel_sum;
+          }
+      }
+  }
+
+  /* Unsharp mask: enhanced + amount * (enhanced - blurred) */
+  for (y = 0; y < h; y++)
+    {
+      for (x = 0; x < w; x++)
+        {
+          gint idx = y * w + x;
+          gint sharp = enhanced[idx] + 0.5 * (enhanced[idx] - blurred[idx]);
+          if (sharp < 0) sharp = 0;
+          if (sharp > 255) sharp = 255;
+          data[idx] = sharp;
+        }
+    }
+
+  return TRUE;
+}

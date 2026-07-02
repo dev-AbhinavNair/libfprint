@@ -82,3 +82,6 @@ gint fpi_mean_sq_diff_norm (const guint8 *buf1,
 FpImage *fpi_image_resize (FpImage *orig,
                            guint    w_factor,
                            guint    h_factor);
+
+gboolean fpi_image_enhance (FpImage *image,
+                            GError  **error);
