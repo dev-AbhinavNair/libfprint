@@ -130,6 +130,12 @@ fp_image_device_start_capture_action (FpDevice *device)
         fpi_print_set_type (enroll_print, FPI_PRINT_NBIS);
     }
 
+  if (action == FPI_DEVICE_ACTION_ENROLL && priv->enroll_prints)
+    {
+      g_ptr_array_unref (priv->enroll_prints);
+      priv->enroll_prints = NULL;
+    }
+
   priv->enroll_stage = 0;
   /* The internal state machine guarantees both of these. */
   g_assert (!priv->finger_present);
@@ -150,6 +156,9 @@ fp_image_device_finalize (GObject *object)
   FpImageDevicePrivate *priv = fp_image_device_get_instance_private (self);
 
   g_assert (priv->active == FALSE);
+
+  if (priv->enroll_prints)
+    g_ptr_array_unref (priv->enroll_prints);
 
   G_OBJECT_CLASS (fp_image_device_parent_class)->finalize (object);
 }

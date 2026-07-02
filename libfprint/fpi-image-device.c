@@ -296,8 +296,40 @@ fpi_image_device_minutiae_detected (GObject *source_object, GAsyncResult *res, g
       FpPrint *enroll_print;
       fpi_device_get_enroll_data (device, &enroll_print);
 
+      if (print && priv->diversity_threshold > 0 && priv->enroll_prints)
+        {
+          guint i;
+          fp_dbg ("Diversity check: comparing against %u stored prints (threshold %u)",
+                  priv->enroll_prints->len, priv->diversity_threshold);
+          for (i = 0; i < priv->enroll_prints->len; i++)
+            {
+              FpPrint *existing = g_ptr_array_index (priv->enroll_prints, i);
+              g_autoptr(GError) match_error = NULL;
+
+              if (fpi_print_bz3_match (existing, print, priv->diversity_threshold, &match_error) == FPI_MATCH_SUCCESS)
+                {
+                  fp_dbg ("Diversity check rejected scan (too similar to stage %u)", i);
+                  GError *retry_error = NULL;
+                  retry_error = fpi_device_retry_new (FP_DEVICE_RETRY_DIFFERENT_AREA);
+                  fpi_device_enroll_progress (device, priv->enroll_stage,
+                                              NULL, retry_error);
+                  fp_image_device_enroll_maybe_await_finger_on (FP_IMAGE_DEVICE (device));
+                  return;
+                }
+              else if (match_error)
+                fp_dbg ("Diversity check match error: %s", match_error->message);
+            }
+        }
+
       if (print)
         {
+          if (priv->diversity_threshold > 0)
+            {
+              if (!priv->enroll_prints)
+                priv->enroll_prints = g_ptr_array_new_with_free_func (g_object_unref);
+              g_ptr_array_add (priv->enroll_prints, g_object_ref (print));
+            }
+
           fpi_print_add_print (enroll_print, print);
           priv->enroll_stage += 1;
         }
@@ -390,6 +422,29 @@ fpi_image_device_set_bz3_threshold (FpImageDevice *self,
   g_return_if_fail (bz3_threshold > 0);
 
   priv->bz3_threshold = bz3_threshold;
+}
+
+/**
+ * fpi_image_device_set_diversity_threshold:
+ * @self: a #FpImageDevice imaging fingerprint device
+ * @threshold: Minimum Bozorth3 match score to consider two scans
+ *   too similar (default: 0 = disabled)
+ *
+ * Set the diversity threshold for enrollment scans. When set to a value > 0,
+ * each new enrollment scan is compared against all previously stored scans.
+ * If the Bozorth3 match score against any existing scan meets or exceeds
+ * this threshold, the scan is rejected with %FP_DEVICE_RETRY_DIFFERENT_AREA
+ * and the user is asked to scan a different area of their finger.
+ */
+void
+fpi_image_device_set_diversity_threshold (FpImageDevice *self,
+                                          guint          threshold)
+{
+  FpImageDevicePrivate *priv = fp_image_device_get_instance_private (self);
+
+  g_return_if_fail (FP_IS_IMAGE_DEVICE (self));
+
+  priv->diversity_threshold = threshold;
 }
 
 /**

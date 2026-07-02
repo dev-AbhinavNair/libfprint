@@ -119,6 +119,9 @@ struct _FpImageDeviceClass
 void fpi_image_device_set_bz3_threshold (FpImageDevice *self,
                                          gint           bz3_threshold);
 
+void fpi_image_device_set_diversity_threshold (FpImageDevice *self,
+                                               guint          threshold);
+
 void fpi_image_device_session_error (FpImageDevice *self,
                                      GError        *error);
 
