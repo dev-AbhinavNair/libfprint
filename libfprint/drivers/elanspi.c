@@ -30,6 +30,7 @@
 #include <sys/stat.h>
 #include <linux/types.h>
 #include <errno.h>
+#include <stdio.h>
 
 struct _FpiDeviceElanSpi
 {
@@ -1351,7 +1352,7 @@ elanspi_fp_frame_stitch_and_submit (FpiDeviceElanSpi *self)
   img = fpi_assemble_frames (&assembling_ctx, frame_start);
   scaled = fpi_image_resize (img, 2, 2);
   fpi_image_enhance (scaled, NULL);
-  fp_warn ("image pipeline: %dx%d (orig %dx%d) -> enhanced %dx%d",
+  fprintf (stderr, "[elanspi] image pipeline: %dx%d (orig %dx%d) -> enhanced %dx%d\n",
            img->width, img->height, img->width, img->height,
            scaled->width, scaled->height);
   scaled->flags |= FPI_IMAGE_PARTIAL | FPI_IMAGE_COLORS_INVERTED;

@@ -185,7 +185,7 @@ fpi_print_add_from_image (FpPrint *print,
 
   xyt = g_new0 (struct xyt_struct, 1);
   minutiae_to_xyt (&_minutiae, image->width, image->height, xyt);
-  fp_warn ("minutiae: %d from %dx%d image", xyt->nrows, image->width, image->height);
+  fprintf (stderr, "[fpi-print] minutiae: %d from %dx%d image\n", xyt->nrows, image->width, image->height);
   g_ptr_array_add (print->prints, xyt);
 
   g_clear_object (&print->image);
@@ -237,7 +237,7 @@ fpi_print_bz3_match (FpPrint *print_template,
 
   pstruct = g_ptr_array_index (print->prints, 0);
   probe_len = bozorth_probe_init (pstruct);
-  fp_warn ("bz3_match: probe minutiae=%d, probe_len=%d", pstruct->nrows, probe_len);
+  fprintf (stderr, "[fpi-print] bz3_match: probe minutiae=%d, probe_len=%d\n", pstruct->nrows, probe_len);
 
   for (i = 0; i < print_template->prints->len; i++)
     {
@@ -245,7 +245,7 @@ fpi_print_bz3_match (FpPrint *print_template,
       gint score;
       gstruct = g_ptr_array_index (print_template->prints, i);
       score = bozorth_to_gallery (probe_len, pstruct, gstruct);
-      fp_warn ("bz3_match: gallery[%d] minutiae=%d, score=%d/%d", i, gstruct->nrows, score, bz3_threshold);
+      fprintf (stderr, "[fpi-print] bz3_match: gallery[%d] minutiae=%d, score=%d/%d\n", i, gstruct->nrows, score, bz3_threshold);
 
       if (score >= bz3_threshold)
         return FPI_MATCH_SUCCESS;
