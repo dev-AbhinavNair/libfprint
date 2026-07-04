@@ -1350,6 +1350,10 @@ elanspi_fp_frame_stitch_and_submit (FpiDeviceElanSpi *self)
   fpi_do_movement_estimation (&assembling_ctx, frame_start);
   img = fpi_assemble_frames (&assembling_ctx, frame_start);
   scaled = fpi_image_resize (img, 2, 2);
+  fpi_image_enhance (scaled, NULL);
+  fp_warn ("image pipeline: %dx%d (orig %dx%d) -> enhanced %dx%d",
+           img->width, img->height, img->width, img->height,
+           scaled->width, scaled->height);
   scaled->flags |= FPI_IMAGE_PARTIAL | FPI_IMAGE_COLORS_INVERTED;
 
   /* submit image */
