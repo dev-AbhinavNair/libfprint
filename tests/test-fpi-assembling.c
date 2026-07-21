@@ -22,6 +22,7 @@
 #include <cairo.h>
 #include "fpi-assembling.h"
 #include "fpi-image.h"
+#include "test-config.h"
 
 typedef struct
 {
@@ -66,7 +67,8 @@ test_frame_assembling (void)
   g_autoptr(FpImage) fp_img = NULL;
   GSList *frames = NULL;
 
-  path = g_test_build_filename (G_TEST_DIST, "vfs5011", "capture.png", NULL);
+  g_assert_false (SOURCE_ROOT == NULL);
+  path = g_build_path (G_DIR_SEPARATOR_S, SOURCE_ROOT, "tests", "vfs5011", "capture.png", NULL);
 
   img = cairo_image_surface_create_from_png (path);
   data = cairo_image_surface_get_data (img);

@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/python3
 
 BUILDDIR='@BUILDDIR@'
 SRCDIR='@SRCDIR@'
@@ -44,7 +44,7 @@ if len(sys.argv) > 3:
     sys.exit(1)
 
 driver_name = sys.argv[1]
-os.environ['FP_DRIVERS_ALLOWLIST'] = driver_name
+os.environ['FP_DRIVERS_WHITELIST'] = driver_name
 
 test_variant = None
 if len(sys.argv) == 3:

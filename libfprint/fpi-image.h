@@ -21,20 +21,20 @@
 #pragma once
 
 #include "fp-image.h"
+#include "sigfm/sigfm.hpp"
+#include <config.h>
 
 /**
  * FpiImageFlags:
  * @FPI_IMAGE_V_FLIPPED: the image is vertically flipped
  * @FPI_IMAGE_H_FLIPPED: the image is horizontally flipped
  * @FPI_IMAGE_COLORS_INVERTED: the colours are inverted
- * @FPI_IMAGE_PARTIAL: the image is a partial scan
  *
  * Flags used in an #FpImage structure to describe the contained image.
  * This is useful for image drivers as they can simply set these flags and
  * rely on the image to be normalized by libfprint before further processing.
  */
 typedef enum {
-  FPI_IMAGE_NONE            = 0,
   FPI_IMAGE_V_FLIPPED       = 1 << 0,
   FPI_IMAGE_H_FLIPPED       = 1 << 1,
   FPI_IMAGE_COLORS_INVERTED = 1 << 2,
@@ -65,12 +65,12 @@ struct _FpImage
   FpiImageFlags flags;
 
   /*< private >*/
-  guint8    *data;
-  guint8    *binarized;
+  guint8      *data;
+  guint8      *binarized;
 
-  GPtrArray *minutiae;
-
-  gboolean   detection_in_progress;
+  GPtrArray   *minutiae;
+  SigfmImgInfo * sigfm_info;
+  guint        ref_count;
 };
 
 gint fpi_std_sq_dev (const guint8 *buf,
@@ -82,6 +82,3 @@ gint fpi_mean_sq_diff_norm (const guint8 *buf1,
 FpImage *fpi_image_resize (FpImage *orig,
                            guint    w_factor,
                            guint    h_factor);
-
-gboolean fpi_image_enhance (FpImage *image,
-                            GError  **error);

@@ -5,7 +5,6 @@ examples = [
     'img-capture',
     'manage-prints',
     'verify',
-    'clear-storage',
 ]
 
 foreach example: examples
@@ -22,8 +21,3 @@ executable('cpp-test',
     'cpp-test.cpp',
     dependencies: libfprint_dep,
 )
-
-if installed_tests
-    install_subdir('prints',
-        install_dir: installed_tests_testdir)
-endif

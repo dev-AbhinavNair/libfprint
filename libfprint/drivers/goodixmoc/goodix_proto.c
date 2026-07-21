@@ -18,8 +18,6 @@
  */
 
 #include <glib.h>
-#include <stdint.h>
-
 #include "goodix_proto.h"
 
 /*
@@ -109,7 +107,7 @@ reflect (uint32_t data, uint8_t n_bits)
        * If the LSB bit is set, set the reflection of it.
        */
       if (data & 0x01)
-        reflection |= (1LU << ((n_bits - 1) - bit));
+        reflection |= (1 << ((n_bits - 1) - bit));
 
       data = (data >> 1);
     }
@@ -213,11 +211,7 @@ gx_proto_build_package (uint8_t       *ppackage,
   init_pack_header (&header, payload_size, cmd, 0);
 
   memcpy (ppackage, &header, PACKAGE_HEADER_SIZE);
-
-  if (payload)
-    memcpy (ppackage + PACKAGE_HEADER_SIZE, payload, payload_size);
-  else
-    ppackage[PACKAGE_HEADER_SIZE] = 0;
+  memcpy (ppackage + PACKAGE_HEADER_SIZE, payload, payload_size);
 
   gx_proto_crc32_calc (ppackage, PACKAGE_HEADER_SIZE + payload_size, ppackage + PACKAGE_HEADER_SIZE + payload_size);
 
@@ -226,108 +220,94 @@ gx_proto_build_package (uint8_t       *ppackage,
 
 
 int
-gx_proto_parse_header (FpiByteReader *reader,
-                       pack_header   *pheader)
+gx_proto_parse_header (
+  uint8_t     *buffer,
+  uint32_t     buffer_len,
+  pack_header *pheader)
 {
-  if (!pheader)
+  if (!buffer || !pheader)
+    return -1;
+  if (buffer_len < PACKAGE_HEADER_SIZE + PACKAGE_CRC_SIZE)
     return -1;
 
-  if (!fpi_byte_reader_get_uint8 (reader, &pheader->cmd0))
-    g_return_val_if_reached (-1);
-
-  if (!fpi_byte_reader_get_uint8 (reader, &pheader->cmd1))
-    g_return_val_if_reached (-1);
-
-  if (!fpi_byte_reader_get_uint8 (reader, &pheader->packagenum))
-    g_return_val_if_reached (-1);
-
-  if (!fpi_byte_reader_get_uint8 (reader, &pheader->reserved))
-    g_return_val_if_reached (-1);
-
-  if (!fpi_byte_reader_get_uint16_le (reader, &pheader->len))
-    g_return_val_if_reached (-1);
-
-  if (!fpi_byte_reader_get_uint8 (reader, &pheader->crc8))
-    g_return_val_if_reached (-1);
-
-  if (!fpi_byte_reader_get_uint8 (reader, &pheader->rev_crc8))
-    g_return_val_if_reached (-1);
-
+  memcpy (pheader, buffer, sizeof (pack_header));
+  pheader->len = GUINT16_FROM_LE (pheader->len);
+  if (buffer_len < pheader->len + PACKAGE_HEADER_SIZE)
+    return -1;
   pheader->len -= PACKAGE_CRC_SIZE;
-
   return 0;
 }
 
 static int
-gx_proto_parse_fingerid (FpiByteReader     *reader,
-                         ptemplate_format_t template)
+gx_proto_parse_fingerid (
+  uint8_t          * fid_buffer,
+  uint16_t           fid_buffer_size,
+  ptemplate_format_t template
+                        )
 {
-  uint8_t byte;
-  const uint8_t *buffer;
+  uint8_t * buffer = NULL;
+  uint16_t Offset = 0;
 
-  if (!template)
+  if (!template || !fid_buffer)
     return -1;
 
-  if (!fpi_byte_reader_get_uint8 (reader, &byte) || byte != 67)
-    g_return_val_if_reached (-1);
+  if (fid_buffer_size < G_STRUCT_OFFSET (template_format_t, payload) + sizeof (uint32_t))
+    return -1;
 
-  if (!fpi_byte_reader_get_uint8 (reader, &template->type))
-    g_return_val_if_reached (-1);
+  buffer = fid_buffer;
+  Offset = 0;
 
-  if (!fpi_byte_reader_get_uint8 (reader, &template->finger_index))
-    g_return_val_if_reached (-1);
+  if (buffer[Offset++] != 67)
+    return -1;
 
-  if (!fpi_byte_reader_skip (reader, 1))
-    g_return_val_if_reached (-1);
-
-  if (!fpi_byte_reader_get_data (reader, sizeof (template->accountid), &buffer))
-    g_return_val_if_reached (-1);
-
-  memcpy (template->accountid, buffer, sizeof (template->accountid));
-
-  if (!fpi_byte_reader_get_data (reader, sizeof (template->tid), &buffer))
-    g_return_val_if_reached (-1);
-
-  memcpy (template->tid, buffer, sizeof (template->tid));
-
-  if (!fpi_byte_reader_get_uint8 (reader, &template->payload.size))
-    g_return_val_if_reached (-1);
-
-  if (!fpi_byte_reader_get_data (reader, template->payload.size, &buffer))
-    g_return_val_if_reached (-1);
-
-  memcpy (template->payload.data, buffer, template->payload.size);
+  template->type = buffer[Offset++];
+  template->finger_index = buffer[Offset++];
+  Offset++;
+  memcpy (template->accountid, &buffer[Offset], sizeof (template->accountid));
+  Offset += sizeof (template->accountid);
+  memcpy (template->tid, &buffer[Offset], sizeof (template->tid));
+  Offset += sizeof (template->tid);   // Offset == 68
+  template->payload.size = buffer[Offset++];
+  if (template->payload.size > sizeof (template->payload.data))
+    return -1;
+  if (template->payload.size + Offset > fid_buffer_size)
+    return -1;
+  memset (template->payload.data, 0, template->payload.size);
+  memcpy (template->payload.data, &buffer[Offset], template->payload.size);
 
   return 0;
 }
 
 int
-gx_proto_parse_body (uint16_t cmd, FpiByteReader *byte_reader, pgxfp_cmd_response_t presp)
+gx_proto_parse_body (uint16_t cmd, uint8_t *buffer, uint16_t buffer_len, pgxfp_cmd_response_t presp)
 {
-  if (!presp)
+  uint16_t offset = 0;
+  uint8_t *fingerlist = NULL;
+
+  if (!buffer || !presp)
     return -1;
-
-  if (!fpi_byte_reader_get_uint8 (byte_reader, &presp->result))
-    g_return_val_if_reached (-1);
-
+  if (buffer_len < 1)
+    return -1;
+  presp->result = buffer[0];
   switch (HIBYTE (cmd))
     {
     case RESPONSE_PACKAGE_CMD:
       {
-        if (!fpi_byte_reader_get_uint8 (byte_reader, &presp->parse_msg.ack_cmd))
-          g_return_val_if_reached (-1);
+        if (buffer_len < sizeof (gxfp_parse_msg_t) + 1)
+          return -1;
+        presp->parse_msg.ack_cmd = buffer[1];
       }
       break;
 
     case MOC_CMD0_UPDATE_CONFIG:
       {
-        presp->finger_config.status = presp->result;
-        /* to compatiable old version firmware */
-        presp->finger_config.max_stored_prints = FP_MAX_FINGERNUM;
+        presp->finger_config.status = buffer[0];
+        if (buffer_len >= 3)
+          presp->finger_config.max_stored_prints = buffer[2];
+        else
+          /* to compatiable old version firmware */
+          presp->finger_config.max_stored_prints = FP_MAX_FINGERNUM;
 
-        if (fpi_byte_reader_skip (byte_reader, 1))
-          fpi_byte_reader_get_uint8 (byte_reader,
-                                     &presp->finger_config.max_stored_prints);
       }
       break;
 
@@ -338,99 +318,85 @@ gx_proto_parse_body (uint16_t cmd, FpiByteReader *byte_reader, pgxfp_cmd_respons
 
     case MOC_CMD0_PWR_BTN_SHIELD:
       presp->power_button_shield_resp.resp_cmd1 = LOBYTE (cmd);
-      uint8_t support_pwr_shield;
-
-      if (fpi_byte_reader_get_uint8 (byte_reader, &support_pwr_shield) &&
-          support_pwr_shield == 0xFF)
-        g_debug ("Power button shield feature not supported!\n");
+      if (buffer_len >= 2)
+        {
+          uint8_t support_pwr_shield = buffer[1];
+          if (support_pwr_shield == 0xFF)
+            g_debug ("Power button shield feature not supported!\n");
+        }
       break;
 
     case MOC_CMD0_GET_VERSION:
-      const uint8_t *version_info;
-
-      if (!fpi_byte_reader_get_data (byte_reader, sizeof (gxfp_version_info_t), &version_info))
-        g_return_val_if_reached (-1);
-
-      memcpy (&presp->version_info, version_info, sizeof (gxfp_version_info_t));
+      if (buffer_len < sizeof (gxfp_version_info_t) + 1)
+        return -1;
+      memcpy (&presp->version_info, buffer + 1, sizeof (gxfp_version_info_t));
       break;
 
     case MOC_CMD0_CAPTURE_DATA:
       if (LOBYTE (cmd) == MOC_CMD1_DEFAULT)
         {
-          if (!fpi_byte_reader_get_uint8 (byte_reader,
-                                          &presp->capture_data_resp.img_quality))
-            g_return_val_if_reached (-1);
-
-          if (!fpi_byte_reader_get_uint8 (byte_reader,
-                                          &presp->capture_data_resp.img_coverage))
-            g_return_val_if_reached (-1);
+          if (buffer_len < sizeof (gxfp_capturedata_t) + 1)
+            return -1;
+          presp->capture_data_resp.img_quality  = buffer[1];
+          presp->capture_data_resp.img_coverage = buffer[2];
         }
       break;
 
     case MOC_CMD0_ENROLL_INIT:
-      if (presp->result != GX_SUCCESS)
-        break;
-      const uint8_t *tid;
-      if (!fpi_byte_reader_get_data (byte_reader, TEMPLATE_ID_SIZE, &tid))
-        g_return_val_if_reached (-1);
-      memcpy (presp->enroll_create.tid, tid, TEMPLATE_ID_SIZE);
+      if (buffer_len < sizeof (gxfp_enroll_init_t) + 1)
+        return -1;
+      if (presp->result == GX_SUCCESS)
+        memcpy (&presp->enroll_init.tid, &buffer[1], TEMPLATE_ID_SIZE);
       break;
 
     case MOC_CMD0_ENROLL:
-      presp->enroll_update.rollback = (presp->result < 0x80) ? false : true;
-      if (!fpi_byte_reader_get_uint8 (byte_reader,
-                                      &presp->enroll_update.img_overlay))
-        g_return_val_if_reached (-1);
-
-      if (!fpi_byte_reader_get_uint8 (byte_reader,
-                                      &presp->enroll_update.img_preoverlay))
-        g_return_val_if_reached (-1);
+      if (buffer_len < sizeof (gxfp_enroll_update_t))
+        return -1;
+      presp->enroll_update.rollback = (buffer[0] < 0x80) ? false : true;
+      presp->enroll_update.img_overlay    = buffer[1];
+      presp->enroll_update.img_preoverlay = buffer[2];
       break;
 
     case MOC_CMD0_CHECK4DUPLICATE:
       presp->check_duplicate_resp.duplicate = (presp->result == 0) ? false : true;
       if (presp->check_duplicate_resp.duplicate)
         {
-          uint16_t tid_size;
-          FpiByteReader tid_reader;
+          if (buffer_len < 3)
+            return -1;
+          uint16_t tid_size = GUINT16_FROM_LE (*(uint16_t *) (buffer + 1));
+          offset += 3;
 
-          if (!fpi_byte_reader_get_uint16_le (byte_reader, &tid_size))
-            g_return_val_if_reached (-1);
-
-          if (!fpi_byte_reader_get_sub_reader (byte_reader, &tid_reader, tid_size))
-            g_return_val_if_reached (-1);
-
-          if (gx_proto_parse_fingerid (&tid_reader, &presp->check_duplicate_resp.template) != 0)
-            g_return_val_if_reached (-1);
+          if (buffer_len < tid_size + offset)
+            return -1;
+          if (gx_proto_parse_fingerid (buffer + offset, tid_size, &presp->check_duplicate_resp.template) != 0)
+            return -1;
         }
       break;
 
     case MOC_CMD0_GETFINGERLIST:
       if (presp->result != GX_SUCCESS)
         break;
-
-      if (!fpi_byte_reader_get_uint8 (byte_reader,
-                                      &presp->finger_list_resp.finger_num))
-        g_return_val_if_reached (-1);
-
+      if (buffer_len < 2)
+        return -1;
+      presp->finger_list_resp.finger_num = buffer[1];
+      fingerlist = buffer + 2;
       for(uint8_t num = 0; num < presp->finger_list_resp.finger_num; num++)
         {
           uint16_t fingerid_length;
-          FpiByteReader fingerid_reader;
-
-          if (!fpi_byte_reader_get_uint16_le (byte_reader, &fingerid_length))
-            g_return_val_if_reached (-1);
-
-          if (!fpi_byte_reader_get_sub_reader (byte_reader, &fingerid_reader,
-                                               fingerid_length))
-            g_return_val_if_reached (-1);
-
-          if (gx_proto_parse_fingerid (&fingerid_reader,
+          if (buffer_len < offset + 2)
+            return -1;
+          fingerid_length = GUINT16_FROM_LE (*(uint16_t *) (fingerlist + offset));
+          offset += 2;
+          if (buffer_len < fingerid_length + offset)
+            return -1;
+          if (gx_proto_parse_fingerid (fingerlist + offset,
+                                       fingerid_length,
                                        &presp->finger_list_resp.finger_list[num]) != 0)
             {
               g_warning ("Failed to parse finger list");
-              g_return_val_if_reached (-1);
+              return -1;
             }
+          offset += fingerid_length;
         }
       break;
 
@@ -439,32 +405,23 @@ gx_proto_parse_body (uint16_t cmd, FpiByteReader *byte_reader, pgxfp_cmd_respons
         uint32_t score = 0;
         uint8_t study = 0;
         uint16_t fingerid_size = 0;
-
-        presp->verify.match = (presp->result == 0) ? true : false;
-
+        presp->verify.match = (buffer[0] == 0) ? true : false;
         if (presp->verify.match)
           {
-            FpiByteReader finger_reader;
-
-            if (!fpi_byte_reader_get_uint16_le (byte_reader,
-                                                &presp->verify.rejectdetail))
-              g_return_val_if_reached (-1);
-
-            if (!fpi_byte_reader_get_uint32_le (byte_reader, &score))
-              g_return_val_if_reached (-1);
-
-            if (!fpi_byte_reader_get_uint8 (byte_reader, &study))
-              g_return_val_if_reached (-1);
-
-            if (!fpi_byte_reader_get_uint16_le (byte_reader, &fingerid_size))
-              g_return_val_if_reached (-1);
-
-            if (!fpi_byte_reader_get_sub_reader (byte_reader, &finger_reader,
-                                                 fingerid_size))
-              g_return_val_if_reached (-1);
-
-            if (gx_proto_parse_fingerid (&finger_reader,
-                                         &presp->verify.template) != 0)
+            if (buffer_len < 10)
+              return -1;
+            offset += 1;
+            presp->verify.rejectdetail = GUINT16_FROM_LE (*(uint16_t *) (buffer + offset));
+            offset += 2;
+            score = GUINT32_FROM_LE (*(uint32_t *) (buffer + offset));
+            offset += 4;
+            study = buffer[offset];
+            offset += 1;
+            fingerid_size = GUINT16_FROM_LE (*(uint16_t *) (buffer + offset));
+            offset += 2;
+            if (buffer_len < fingerid_size + offset)
+              return -1;
+            if (gx_proto_parse_fingerid (buffer + offset, fingerid_size, &presp->verify.template) != 0)
               {
                 presp->result = GX_FAILED;
                 break;
@@ -475,7 +432,7 @@ gx_proto_parse_body (uint16_t cmd, FpiByteReader *byte_reader, pgxfp_cmd_respons
       break;
 
     case MOC_CMD0_FINGER_MODE:
-      presp->finger_status.status = presp->result;
+      presp->finger_status.status = buffer[0];
       break;
 
     default:
@@ -493,6 +450,8 @@ static uint8_t sensor_config[26] = {
 int
 gx_proto_init_sensor_config (pgxfp_sensor_cfg_t pconfig)
 {
+  uint32_t crc32_calc = 0;
+
   if (!pconfig)
     return -1;
   memset (pconfig, 0, sizeof (*pconfig));
@@ -501,7 +460,9 @@ gx_proto_init_sensor_config (pgxfp_sensor_cfg_t pconfig)
   memcpy (&pconfig->config, sensor_config, G_N_ELEMENTS (sensor_config));
   pconfig->reserved[0] = 1;
 
-  gx_proto_crc32_calc ((uint8_t *) pconfig, sizeof (*pconfig) - PACKAGE_CRC_SIZE, pconfig->crc_value);
+  gx_proto_crc32_calc ((uint8_t *) pconfig, sizeof (*pconfig) - PACKAGE_CRC_SIZE, (uint8_t *) &crc32_calc);
+
+  memcpy (pconfig->crc_value, &crc32_calc, PACKAGE_CRC_SIZE);
 
   return 0;
 }

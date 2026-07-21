@@ -19,8 +19,9 @@
 
 #pragma once
 
-#include "fpi-device.h"
 #include "fp-image-device.h"
+#include "fpi-device.h"
+#include "fpi-print.h"
 
 /**
  * FpiImageDeviceState:
@@ -70,6 +71,11 @@ typedef enum {
   FPI_IMAGE_DEVICE_STATE_AWAIT_FINGER_OFF,
 } FpiImageDeviceState;
 
+typedef enum {
+  FPI_DEVICE_ALGO_NBIS = FPI_PRINT_NBIS,
+  FPI_DEVICE_ALGO_SIGFM = FPI_PRINT_SIGFM,
+} FpiImageDeviceAlgorithm;
+
 /**
  * FpImageDeviceClass:
  * @bz3_threshold: Threshold to consider bozorth3 score a match, default: 40
@@ -102,25 +108,23 @@ typedef enum {
  */
 struct _FpImageDeviceClass
 {
-  FpDeviceClass parent_class;
+  FpDeviceClass           parent_class;
 
-  gint          bz3_threshold;
-  gint          img_width;
-  gint          img_height;
+  gint                    bz3_threshold;
+  gint                    img_width;
+  gint                    img_height;
+  FpiImageDeviceAlgorithm algorithm;
 
-  void          (*img_open)     (FpImageDevice *dev);
-  void          (*img_close)    (FpImageDevice *dev);
-  void          (*activate)     (FpImageDevice *dev);
-  void          (*change_state) (FpImageDevice      *dev,
-                                 FpiImageDeviceState state);
-  void          (*deactivate)   (FpImageDevice *dev);
+  void                    (*img_open)     (FpImageDevice *dev);
+  void                    (*img_close)    (FpImageDevice *dev);
+  void                    (*activate)     (FpImageDevice *dev);
+  void                    (*change_state) (FpImageDevice      *dev,
+                                           FpiImageDeviceState state);
+  void                    (*deactivate)   (FpImageDevice *dev);
 };
 
 void fpi_image_device_set_bz3_threshold (FpImageDevice *self,
                                          gint           bz3_threshold);
-
-void fpi_image_device_set_diversity_threshold (FpImageDevice *self,
-                                               guint          threshold);
 
 void fpi_image_device_session_error (FpImageDevice *self,
                                      GError        *error);

@@ -37,9 +37,7 @@ typedef struct
   FpImage            *capture_image;
 
   gint                bz3_threshold;
-
-  guint               diversity_threshold;
-  GPtrArray          *enroll_prints;
+  FpiPrintType        algorithm;
 } FpImageDevicePrivate;
 
 

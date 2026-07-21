@@ -17,6 +17,7 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#include "fpi-print.h"
 #define FP_COMPONENT "image_device"
 #include "fpi-log.h"
 
@@ -276,7 +277,7 @@ fpi_image_device_minutiae_detected (GObject *source_object, GAsyncResult *res, g
   if (!error)
     {
       print = fp_print_new (device);
-      fpi_print_set_type (print, FPI_PRINT_NBIS);
+      fpi_print_set_type (print, priv->algorithm);
       if (!fpi_print_add_from_image (print, image, &error))
         {
           g_clear_object (&print);
@@ -296,40 +297,8 @@ fpi_image_device_minutiae_detected (GObject *source_object, GAsyncResult *res, g
       FpPrint *enroll_print;
       fpi_device_get_enroll_data (device, &enroll_print);
 
-      if (print && priv->diversity_threshold > 0 && priv->enroll_prints)
-        {
-          guint i;
-          fp_dbg ("Diversity check: comparing against %u stored prints (threshold %u)",
-                  priv->enroll_prints->len, priv->diversity_threshold);
-          for (i = 0; i < priv->enroll_prints->len; i++)
-            {
-              FpPrint *existing = g_ptr_array_index (priv->enroll_prints, i);
-              g_autoptr(GError) match_error = NULL;
-
-              if (fpi_print_bz3_match (existing, print, priv->diversity_threshold, &match_error) == FPI_MATCH_SUCCESS)
-                {
-                  fp_dbg ("Diversity check rejected scan (too similar to stage %u)", i);
-                  GError *retry_error = NULL;
-                  retry_error = fpi_device_retry_new (FP_DEVICE_RETRY_DIFFERENT_AREA);
-                  fpi_device_enroll_progress (device, priv->enroll_stage,
-                                              NULL, retry_error);
-                  fp_image_device_enroll_maybe_await_finger_on (FP_IMAGE_DEVICE (device));
-                  return;
-                }
-              else if (match_error)
-                fp_dbg ("Diversity check match error: %s", match_error->message);
-            }
-        }
-
       if (print)
         {
-          if (priv->diversity_threshold > 0)
-            {
-              if (!priv->enroll_prints)
-                priv->enroll_prints = g_ptr_array_new_with_free_func (g_object_unref);
-              g_ptr_array_add (priv->enroll_prints, g_object_ref (print));
-            }
-
           fpi_print_add_print (enroll_print, print);
           priv->enroll_stage += 1;
         }
@@ -355,9 +324,18 @@ fpi_image_device_minutiae_detected (GObject *source_object, GAsyncResult *res, g
 
       fpi_device_get_verify_data (device, &template);
       if (print)
-        result = fpi_print_bz3_match (template, print, priv->bz3_threshold, &error);
+        {
+          if (priv->algorithm == FPI_PRINT_NBIS)
+            result = fpi_print_bz3_match (template, print, priv->bz3_threshold,
+                                          &error);
+          else if (priv->algorithm == FPI_PRINT_SIGFM)
+            result = fpi_print_sigfm_match (template, print, priv->bz3_threshold,
+                                          &error);
+        }
       else
-        result = FPI_MATCH_ERROR;
+        {
+          result = FPI_MATCH_ERROR;
+        }
 
       if (!error || error->domain == FP_DEVICE_RETRY)
         fpi_device_verify_report (device, result, g_steal_pointer (&print), g_steal_pointer (&error));
@@ -375,7 +353,15 @@ fpi_image_device_minutiae_detected (GObject *source_object, GAsyncResult *res, g
         {
           FpPrint *template = g_ptr_array_index (templates, i);
 
-          if (fpi_print_bz3_match (template, print, priv->bz3_threshold, &error) == FPI_MATCH_SUCCESS)
+          int match_result = FPI_MATCH_ERROR;
+          if (priv->algorithm == FPI_PRINT_NBIS)
+            match_result = fpi_print_bz3_match (template, print,
+                                                priv->bz3_threshold, &error);
+          else if (priv->algorithm == FPI_PRINT_SIGFM)
+            match_result = fpi_print_sigfm_match (template, print,
+                                                priv->bz3_threshold, &error);
+
+          if (match_result == FPI_MATCH_SUCCESS)
             {
               result = template;
               break;
@@ -422,29 +408,6 @@ fpi_image_device_set_bz3_threshold (FpImageDevice *self,
   g_return_if_fail (bz3_threshold > 0);
 
   priv->bz3_threshold = bz3_threshold;
-}
-
-/**
- * fpi_image_device_set_diversity_threshold:
- * @self: a #FpImageDevice imaging fingerprint device
- * @threshold: Minimum Bozorth3 match score to consider two scans
- *   too similar (default: 0 = disabled)
- *
- * Set the diversity threshold for enrollment scans. When set to a value > 0,
- * each new enrollment scan is compared against all previously stored scans.
- * If the Bozorth3 match score against any existing scan meets or exceeds
- * this threshold, the scan is rejected with %FP_DEVICE_RETRY_DIFFERENT_AREA
- * and the user is asked to scan a different area of their finger.
- */
-void
-fpi_image_device_set_diversity_threshold (FpImageDevice *self,
-                                          guint          threshold)
-{
-  FpImageDevicePrivate *priv = fp_image_device_get_instance_private (self);
-
-  g_return_if_fail (FP_IS_IMAGE_DEVICE (self));
-
-  priv->diversity_threshold = threshold;
 }
 
 /**
@@ -549,12 +512,20 @@ fpi_image_device_image_captured (FpImageDevice *self, FpImage *image)
 
   priv->minutiae_scan_active = TRUE;
 
-  /* XXX: We also detect minutiae in capture mode, we solely do this
-   *      to normalize the image which will happen as a by-product. */
-  fp_image_detect_minutiae (image,
-                            fpi_device_get_cancellable (FP_DEVICE (self)),
-                            fpi_image_device_minutiae_detected,
-                            self);
+  if (priv->algorithm != FPI_PRINT_SIGFM)
+    {
+      /* XXX: We also detect minutiae in capture mode, we solely do this
+       *      to normalize the image which will happen as a by-product. */
+      fp_image_detect_minutiae (image,
+                                fpi_device_get_cancellable (FP_DEVICE (self)),
+                                fpi_image_device_minutiae_detected, self);
+    }
+  else
+    {
+      fp_image_extract_sigfm_info (image,
+                                 fpi_device_get_cancellable (FP_DEVICE (self)),
+                                 fpi_image_device_minutiae_detected, self);
+    }
 
   /* XXX: This is wrong if we add support for raw capture mode. */
   fp_image_device_change_state (self, FPI_IMAGE_DEVICE_STATE_AWAIT_FINGER_OFF);
@@ -620,7 +591,7 @@ fpi_image_device_retry_scan (FpImageDevice *self, FpDeviceRetry retry)
 /**
  * fpi_image_device_session_error:
  * @self: a #FpImageDevice imaging fingerprint device
- * @error: (nullable) (transfer full): The #GError to report.
+ * @error: The #GError to report
  *
  * Report an error while interacting with the device. This effectively
  * aborts the current ongoing action. Note that doing so will result in
@@ -679,7 +650,7 @@ fpi_image_device_session_error (FpImageDevice *self, GError *error)
 /**
  * fpi_image_device_activate_complete:
  * @self: a #FpImageDevice imaging fingerprint device
- * @error: (nullable) (transfer full): The #GError or %NULL on success
+ * @error: A #GError or %NULL on success
  *
  * Reports completion of device activation.
  */
@@ -718,7 +689,7 @@ fpi_image_device_activate_complete (FpImageDevice *self, GError *error)
 /**
  * fpi_image_device_deactivate_complete:
  * @self: a #FpImageDevice imaging fingerprint device
- * @error: (nullable) (transfer full): The #GError or %NULL on success
+ * @error: A #GError or %NULL on success
  *
  * Reports completion of device deactivation.
  */
@@ -745,7 +716,7 @@ fpi_image_device_deactivate_complete (FpImageDevice *self, GError *error)
 /**
  * fpi_image_device_open_complete:
  * @self: a #FpImageDevice imaging fingerprint device
- * @error: (nullable) (transfer full): The #GError or %NULL on success
+ * @error: A #GError or %NULL on success
  *
  * Reports completion of open operation.
  */
@@ -773,7 +744,7 @@ fpi_image_device_open_complete (FpImageDevice *self, GError *error)
 /**
  * fpi_image_device_close_complete:
  * @self: a #FpImageDevice imaging fingerprint device
- * @error: (nullable) (transfer full): The #GError or %NULL on success
+ * @error: A #GError or %NULL on success
  *
  * Reports completion of close operation.
  */

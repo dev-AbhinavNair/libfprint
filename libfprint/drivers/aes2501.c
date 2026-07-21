@@ -213,8 +213,9 @@ sum_histogram_values (unsigned char *data, guint8 threshold)
   if (threshold > 0x0f)
     return -1;
 
+  /* FIXME endianness */
   for (i = threshold; i < 16; i++)
-    r += GUINT16_FROM_LE (histogram[i]);
+    r += histogram[i];
 
   return r;
 }

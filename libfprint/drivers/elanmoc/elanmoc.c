@@ -31,16 +31,6 @@ static const FpIdEntry id_table[] = {
   { .vid = 0x04f3,  .pid = 0x0c88,  },
   { .vid = 0x04f3,  .pid = 0x0c8c,  },
   { .vid = 0x04f3,  .pid = 0x0c8d,  },
-  { .vid = 0x04f3,  .pid = 0x0c98,  },
-  { .vid = 0x04f3,  .pid = 0x0c99,  },
-  { .vid = 0x04f3,  .pid = 0x0c9c,  },
-  { .vid = 0x04f3,  .pid = 0x0c9d,  },
-  { .vid = 0x04f3,  .pid = 0x0c9f,  },
-  { .vid = 0x04f3,  .pid = 0x0ca3,  },
-  { .vid = 0x04f3,  .pid = 0x0ca7,  },
-  { .vid = 0x04f3,  .pid = 0x0ca8,  },
-  { .vid = 0x04f3,  .pid = 0x0cb0,  },
-  { .vid = 0x04f3,  .pid = 0x0cb2,  },
   { .vid = 0,  .pid = 0,  .driver_data = 0 },   /* terminating entry */
 };
 
@@ -59,9 +49,9 @@ elanmoc_compose_cmd (
   const struct elanmoc_cmd *cmd_info
                     )
 {
-  g_autofree uint8_t *cmd_buf = NULL;
+  g_autofree char *cmd_buf = NULL;
 
-  cmd_buf = g_new0 (uint8_t, cmd_info->cmd_len);
+  cmd_buf = g_malloc0 (cmd_info->cmd_len);
   if(cmd_info->cmd_len < ELAN_MAX_HDR_LEN)
     memcpy (cmd_buf, &cmd_info->cmd_header, cmd_info->cmd_len);
   else
@@ -137,10 +127,10 @@ fp_cmd_receive_cb (FpiUsbTransfer *transfer,
 }
 
 typedef enum {
-  ELAN_MOC_CMD_SEND = 0,
-  ELAN_MOC_CMD_GET,
-  ELAN_MOC_CMD_NUM_STATES,
-} ElanMocCmdState;
+  FP_CMD_SEND = 0,
+  FP_CMD_GET,
+  FP_CMD_NUM_STATES,
+} FpCmdState;
 
 static void
 fp_cmd_run_state (FpiSsm   *ssm,
@@ -151,7 +141,7 @@ fp_cmd_run_state (FpiSsm   *ssm,
 
   switch (fpi_ssm_get_cur_state (ssm))
     {
-    case ELAN_MOC_CMD_SEND:
+    case FP_CMD_SEND:
       if (self->cmd_transfer)
         {
           self->cmd_transfer->ssm = ssm;
@@ -167,7 +157,7 @@ fp_cmd_run_state (FpiSsm   *ssm,
         }
       break;
 
-    case ELAN_MOC_CMD_GET:
+    case FP_CMD_GET:
       if (self->cmd_len_in == 0)
         {
           CommandData *data = fpi_ssm_get_data (ssm);
@@ -234,7 +224,7 @@ elanmoc_get_cmd (FpDevice *device, guint8 *buffer_out,
 
   self->cmd_ssm = fpi_ssm_new (FP_DEVICE (self),
                                fp_cmd_run_state,
-                               ELAN_MOC_CMD_NUM_STATES);
+                               FP_CMD_NUM_STATES);
 
   fpi_ssm_set_data (self->cmd_ssm, data, (GDestroyNotify) fp_cmd_ssm_done_data_free);
 
@@ -1094,10 +1084,6 @@ elanmoc_open (FpDevice *device)
     {
     case 0x0c8c:
       self->max_moc_enroll_time = 11;
-      break;
-
-    case 0x0c99:
-      self->max_moc_enroll_time = 14;
       break;
 
     case 0x0c8d:

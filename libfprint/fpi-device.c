@@ -22,12 +22,10 @@
 #include <math.h>
 #include <fcntl.h>
 #include <errno.h>
-#include <gmodule.h>
 
 #include "fpi-log.h"
 
 #include "fp-device-private.h"
-#include "tests/fpi-test-emulation.h"
 
 /**
  * SECTION: fpi-device
@@ -52,64 +50,8 @@ fp_device_get_instance_private (FpDevice *self)
                             g_type_class_get_instance_private_offset (dev_class));
 }
 
-G_DEFINE_AUTOPTR_CLEANUP_FUNC (GModule, g_module_close)
-
-/**
- * fpi_device_emulation_mode_enabled:
- * @device: The #FpDevice to check
- *
- * Checks if the device is running in emulation mode, which is enabled by
- * setting the FP_DEVICE_EMULATION environment variable to a '1' value but
- * only when the test emulation library is loaded.
- * This is used by some drivers to enable special behavior for testing
- * and development purposes.
- */
-gboolean
-  (fpi_device_emulation_mode_enabled) (FpDevice *device)
-{
-  static gboolean (*real_fn)(FpDevice *) = NULL;
-  static gsize emulation_mode = 0;
-
-  if (g_once_init_enter (&emulation_mode))
-    {
-      if (g_strcmp0 (g_getenv (FPI_EMULATION_ENV_VAR), "1") == 0)
-        {
-          const char *dirs[] = {
-            FPI_EMULATION_HELPER_BUILDDIR,
-            FPI_EMULATION_HELPER_INSTALLDIR,
-          };
-
-          for (size_t i = 0; i < G_N_ELEMENTS (dirs); ++i)
-            {
-              g_autofree char *path = NULL;
-              g_autoptr(GModule) mod = NULL;
-              gpointer sym;
-
-              path = g_build_filename (dirs[i], FPI_EMULATION_HELPER_MODULE, NULL);
-              if (!(mod = g_module_open (path, G_MODULE_BIND_LAZY | G_MODULE_BIND_LOCAL)))
-                continue;
-
-              if (!g_module_symbol (mod, "fpi_device_emulation_mode_enabled", &sym))
-                continue;
-
-              real_fn = (gboolean (*)(FpDevice *)) sym;
-              g_steal_pointer (&mod);
-              break;
-            }
-        }
-
-      g_once_init_leave (&emulation_mode, real_fn ? TRUE : G_MAXSIZE);
-    }
-
-  if (real_fn)
-    return real_fn (device);
-
-  return FALSE;
-}
-
 /**
  * fpi_device_class_auto_initialize_features:
- * @device_class: An #FpDeviceClass to initialize
  *
  * Initializes the #FpDeviceClass @features flags checking what device vfuncs
  * are implemented.
@@ -173,10 +115,6 @@ fpi_device_retry_new (FpDeviceRetry error)
 
     case FP_DEVICE_RETRY_REMOVE_FINGER:
       msg = "Please try again after removing the finger first.";
-      break;
-
-    case FP_DEVICE_RETRY_TOO_FAST:
-      msg = "The swipe was too fast, please try again.";
       break;
 
     default:
@@ -1104,41 +1042,34 @@ fp_device_task_return_in_idle_cb (gpointer user_data)
 static void
 fpi_device_task_return_data_free (FpDeviceTaskReturnData *data)
 {
-  switch (data->type)
+  if (data->result)
     {
-    case FP_DEVICE_TASK_RETURN_INT:
-    case FP_DEVICE_TASK_RETURN_BOOL:
-      break;
+      switch (data->type)
+        {
+        case FP_DEVICE_TASK_RETURN_INT:
+        case FP_DEVICE_TASK_RETURN_BOOL:
+          break;
 
-    case FP_DEVICE_TASK_RETURN_OBJECT:
-      g_clear_object ((GObject **) &data->result);
-      break;
+        case FP_DEVICE_TASK_RETURN_OBJECT:
+          g_clear_object ((GObject **) &data->result);
+          break;
 
-    case FP_DEVICE_TASK_RETURN_PTR_ARRAY:
-      g_clear_pointer ((GPtrArray **) &data->result, g_ptr_array_unref);
-      break;
+        case FP_DEVICE_TASK_RETURN_PTR_ARRAY:
+          g_clear_pointer ((GPtrArray **) &data->result, g_ptr_array_unref);
+          break;
 
-    case FP_DEVICE_TASK_RETURN_ERROR:
-      g_clear_error ((GError **) &data->result);
-      break;
+        case FP_DEVICE_TASK_RETURN_ERROR:
+          g_clear_error ((GError **) &data->result);
+          break;
 
-    default:
-      g_assert_not_reached ();
+        default:
+          g_assert_not_reached ();
+        }
     }
-
   g_object_unref (data->device);
   g_free (data);
 }
 
-/**
- * fpi_device_return_task_in_idle:
- * @device: The #FpDevice
- * @return_type: The #FpDeviceTaskReturnType of @return_data
- * @return_data: (nullable) (transfer full): The data to return.
- *
- * Completes a #FpDevice task in an idle source, stealing the ownership of
- * the passed @returned_data.
- */
 static void
 fpi_device_return_task_in_idle (FpDevice              *device,
                                 FpDeviceTaskReturnType return_type,
@@ -1170,7 +1101,7 @@ fpi_device_return_task_in_idle (FpDevice              *device,
  * @device: The #FpDevice
  * @device_id: Unique ID for the device or %NULL
  * @device_name: Human readable name or %NULL for driver name
- * @error: (nullable) (transfer full): The #GError or %NULL on success
+ * @error: The #GError or %NULL on success
  *
  * Finish an ongoing probe operation. If error is %NULL success is assumed.
  */
@@ -1216,7 +1147,7 @@ fpi_device_probe_complete (FpDevice    *device,
 /**
  * fpi_device_open_complete:
  * @device: The #FpDevice
- * @error: (nullable) (transfer full): The #GError or %NULL on success
+ * @error: The #GError or %NULL on success
  *
  * Finish an ongoing open operation. If error is %NULL success is assumed.
  */
@@ -1243,7 +1174,7 @@ fpi_device_open_complete (FpDevice *device, GError *error)
 /**
  * fpi_device_close_complete:
  * @device: The #FpDevice
- * @error: (nullable) (transfer full): The #GError or %NULL on success
+ * @error: The #GError or %NULL on success
  *
  * Finish an ongoing close operation. If error is %NULL success is assumed.
  */
@@ -1295,7 +1226,7 @@ fpi_device_close_complete (FpDevice *device, GError *error)
  * fpi_device_enroll_complete:
  * @device: The #FpDevice
  * @print: (nullable) (transfer full): The #FpPrint or %NULL on failure
- * @error: (nullable) (transfer full): The #GError or %NULL on success
+ * @error: The #GError or %NULL on success
  *
  * Finish an ongoing enroll operation. The #FpPrint can be stored by the
  * caller for later verification.
@@ -1424,7 +1355,7 @@ fpi_device_verify_complete (FpDevice *device,
 /**
  * fpi_device_identify_complete:
  * @device: The #FpDevice
- * @error: (nullable) (transfer full): The #GError or %NULL on success
+ * @error: The #GError or %NULL on success
  *
  * Finish an ongoing identify operation.
  *
@@ -1490,7 +1421,7 @@ fpi_device_identify_complete (FpDevice *device,
  * fpi_device_capture_complete:
  * @device: The #FpDevice
  * @image: The #FpImage, or %NULL on error
- * @error: (nullable) (transfer full): The #GError or %NULL on success
+ * @error: The #GError or %NULL on success
  *
  * Finish an ongoing capture operation.
  */
@@ -1537,7 +1468,7 @@ fpi_device_capture_complete (FpDevice *device,
 /**
  * fpi_device_delete_complete:
  * @device: The #FpDevice
- * @error: (nullable) (transfer full): The #GError or %NULL on success
+ * @error: The #GError or %NULL on success
  *
  * Finish an ongoing delete operation.
  */
@@ -1566,7 +1497,7 @@ fpi_device_delete_complete (FpDevice *device,
  * fpi_device_list_complete:
  * @device: The #FpDevice
  * @prints: (element-type FpPrint) (transfer container): Possibly empty array of prints or %NULL on error
- * @error: (nullable) (transfer full): The #GError or %NULL on success
+ * @error: The #GError or %NULL on success
  *
  * Finish an ongoing list operation.
  *
@@ -1844,7 +1775,7 @@ fpi_device_suspend_completed (FpDevice *device)
 /**
  * fpi_device_suspend_complete:
  * @device: The #FpDevice
- * @error: (nullable) (transfer full): The #GError or %NULL on success
+ * @error: The #GError or %NULL on success
  *
  * Finish a suspend request. Only return a %NULL error if suspend has been
  * correctly configured and the current action as returned by
@@ -1854,7 +1785,7 @@ fpi_device_suspend_completed (FpDevice *device)
  * current action will be cancelled before the error is forwarded to the
  * application.
  *
- * It is recommended to set @error to #FP_DEVICE_ERROR_NOT_SUPPORTED.
+ * It is recommended to set @error to #FP_ERROR_NOT_IMPLEMENTED.
  */
 void
 fpi_device_suspend_complete (FpDevice *device,
@@ -1895,7 +1826,7 @@ fpi_device_suspend_complete (FpDevice *device,
 /**
  * fpi_device_resume_complete:
  * @device: The #FpDevice
- * @error: (nullable) (transfer full): The #GError or %NULL on success
+ * @error: The #GError or %NULL on success
  *
  * Finish a resume request.
  */
@@ -1923,7 +1854,7 @@ fpi_device_resume_complete (FpDevice *device,
 /**
  * fpi_device_clear_storage_complete:
  * @device: The #FpDevice
- * @error: (nullable) (transfer full): The #GError or %NULL on success
+ * @error: The #GError or %NULL on success
  *
  * Finish an ongoing clear_storage operation.
  */
@@ -1954,7 +1885,7 @@ fpi_device_clear_storage_complete (FpDevice *device,
  * @device: The #FpDevice
  * @completed_stages: The number of stages that are completed at this point
  * @print: (transfer floating): The #FpPrint for the newly completed stage or %NULL on failure
- * @error: (nullable) (transfer full): The #GError or %NULL on success
+ * @error: (transfer full): The #GError or %NULL on success
  *
  * Notify about the progress of the enroll operation. This is important for UI interaction.
  * The passed error may be used if a scan needs to be retried, use fpi_device_retry_new().
