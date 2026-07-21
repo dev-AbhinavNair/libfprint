@@ -1348,14 +1348,39 @@ elanspi_fp_frame_stitch_and_submit (FpiDeviceElanSpi *self)
   /* stitch image */
   GSList *frame_start = g_slist_nth (self->fp_frame_list, ELANSPI_SWIPE_FRAMES_DISCARD);
 
+  static int frame_count = 0;
   fpi_do_movement_estimation (&assembling_ctx, frame_start);
   img = fpi_assemble_frames (&assembling_ctx, frame_start);
   scaled = fpi_image_resize (img, 2, 2);
-  fpi_image_enhance (scaled, NULL);
-  fprintf (stderr, "[elanspi] image pipeline: %dx%d (orig %dx%d) -> enhanced %dx%d\n",
+
+  /* Save image as PGM for visual inspection */
+  {
+    char path[256];
+    snprintf (path, sizeof (path), "/tmp/fp_scan_%04d.pgm", frame_count);
+    FILE *f = fopen (path, "wb");
+    if (f)
+      {
+        fprintf (f, "P5\n%d %d\n255\n", img->width, img->height);
+        fwrite (img->data, 1, img->width * img->height, f);
+        fclose (f);
+        fprintf (stderr, "[elanspi] saved raw image: %s (%dx%d)\n", path, img->width, img->height);
+      }
+    snprintf (path, sizeof (path), "/tmp/fp_scan_%04d_scaled.pgm", frame_count);
+    f = fopen (path, "wb");
+    if (f)
+      {
+        fprintf (f, "P5\n%d %d\n255\n", scaled->width, scaled->height);
+        fwrite (scaled->data, 1, scaled->width * scaled->height, f);
+        fclose (f);
+        fprintf (stderr, "[elanspi] saved scaled image: %s (%dx%d)\n", path, scaled->width, scaled->height);
+      }
+    frame_count++;
+  }
+
+  fprintf (stderr, "[elanspi] image pipeline: %dx%d (orig %dx%d) -> scaled %dx%d\n",
            img->width, img->height, img->width, img->height,
            scaled->width, scaled->height);
-  scaled->flags |= FPI_IMAGE_PARTIAL | FPI_IMAGE_COLORS_INVERTED;
+  scaled->flags |= FPI_IMAGE_PARTIAL;
 
   /* submit image */
   fpi_image_device_image_captured (FP_IMAGE_DEVICE (self), g_steal_pointer (&scaled));
@@ -1566,8 +1591,6 @@ elanspi_open (FpImageDevice *dev)
 
   G_DEBUG_HERE ();
 
-  fpi_image_device_set_diversity_threshold (dev, 18);
-
   int spi_fd = open (fpi_device_get_udev_data (FP_DEVICE (dev), FPI_DEVICE_UDEV_SUBTYPE_SPIDEV), O_RDWR);
 
   if (spi_fd < 0)
@@ -1706,9 +1729,9 @@ fpi_device_elanspi_class_init (FpiDeviceElanSpiClass *klass)
   dev_class->type = FP_DEVICE_TYPE_UDEV;
   dev_class->id_table = elanspi_id_table;
   dev_class->scan_type = FP_SCAN_TYPE_SWIPE;
-  dev_class->nr_enroll_stages = 11;       /* these sensors are very hit or miss, may as well record a few extras */
+  dev_class->nr_enroll_stages = 7;       /* these sensors are very hit or miss, may as well record a few extras */
 
-  img_class->bz3_threshold = 10;
+  img_class->bz3_threshold = 24;
   img_class->img_open = elanspi_open;
   img_class->activate = elanspi_activate;
   img_class->deactivate = elanspi_deactivate;
